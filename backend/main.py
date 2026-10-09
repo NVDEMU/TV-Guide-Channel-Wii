@@ -1,7 +1,8 @@
-"""Development guide API for the TV Guide Channel Wii revival.
+"""US-English guide API and development endpoints for the Wii channel.
 
-The channel and programme records generated here are intentionally synthetic.
-This API is not the original channel's network protocol.
+The Wii-facing text protocol is project-specific, not the original Nintendo
+channel protocol. Real listings are loaded from a user-configured XMLTV file;
+without one, the API returns explicitly synthetic demo data.
 """
 from __future__ import annotations
 
@@ -12,28 +13,34 @@ from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Response
 
-APP_NAME = "TV Guide Channel Wii API"
+from backend.us_xmltv import configured_us_programmes
+
+APP_NAME = "TV Guide USA API"
 TOKYO = ZoneInfo("Asia/Tokyo")
+EASTERN = ZoneInfo("America/New_York")
 MAX_WINDOW = timedelta(days=7)
 
 app = FastAPI(
     title=APP_NAME,
     description=(
-        "A development API for guide-data experiments. All current channel and "
-        "programme listings are synthetic placeholders, not live TV data and "
-        "not a verified implementation of the original Wii protocol."
+        "US-English TV guide API for the TV Guide USA Wii homebrew channel. "
+        "Real schedules require a user-configured XMLTV source. Demo listings "
+        "are synthetic and are never represented as live broadcast data."
     ),
-    version="0.1.0",
+    version="0.2.0",
 )
 
 REGION: dict[str, str] = {
     "id": "jp-demo",
     "name": "Japan — demo region",
-    "description": (
-        "Placeholder region for API tests only; it does not represent a real "
-        "prefecture, lineup, or broadcaster."
-    ),
+    "description": "Legacy research fixture; synthetic data only.",
     "timezone": "Asia/Tokyo",
+}
+US_REGION: dict[str, str] = {
+    "id": "us",
+    "name": "United States (English)",
+    "description": "US-English guide; demo fixtures unless XMLTV data is configured.",
+    "timezone": "America/New_York",
 }
 
 CHANNELS: list[dict[str, Any]] = [
@@ -63,100 +70,106 @@ CHANNELS: list[dict[str, Any]] = [
     },
 ]
 
+US_CHANNELS: list[dict[str, Any]] = [
+    {"id": "demo-abc", "name": "ABC (DEMO)", "name_ja": "", "broadcast_type": "terrestrial-digital", "channel_number": "ABC", "region": "us"},
+    {"id": "demo-cbs", "name": "CBS (DEMO)", "name_ja": "", "broadcast_type": "terrestrial-digital", "channel_number": "CBS", "region": "us"},
+    {"id": "demo-nbc", "name": "NBC (DEMO)", "name_ja": "", "broadcast_type": "terrestrial-digital", "channel_number": "NBC", "region": "us"},
+    {"id": "demo-fox", "name": "FOX (DEMO)", "name_ja": "", "broadcast_type": "terrestrial-digital", "channel_number": "FOX", "region": "us"},
+    {"id": "demo-pbs", "name": "PBS (DEMO)", "name_ja": "", "broadcast_type": "terrestrial-digital", "channel_number": "PBS", "region": "us"},
+]
+
+US_DEMO_TITLES = {
+    "demo-abc": ("Sample National News", "Demo entertainment special"),
+    "demo-cbs": ("Sample Evening News", "Demo comedy hour"),
+    "demo-nbc": ("Sample Local News", "Demo game show"),
+    "demo-fox": ("Sample Sports Desk", "Demo feature film"),
+    "demo-pbs": ("Sample Public Affairs", "Demo science program"),
+}
+
 
 def _now_tokyo() -> datetime:
     return datetime.now(timezone.utc).astimezone(TOKYO).replace(microsecond=0)
 
 
 def _resolve_window(
-    start: datetime | None, end: datetime | None
+    start: datetime | None, end: datetime | None, tz: ZoneInfo = TOKYO
 ) -> tuple[datetime, datetime]:
-    """Resolve optional query bounds and require explicit timezone offsets."""
-    now = _now_tokyo()
+    """Resolve query bounds and require explicit timezone offsets when supplied."""
+    now = datetime.now(timezone.utc).astimezone(tz).replace(microsecond=0)
     if start is None and end is None:
         start, end = now, now + timedelta(hours=24)
     elif start is None:
         assert end is not None
         if end.tzinfo is None or end.utcoffset() is None:
-            raise HTTPException(
-                status_code=422,
-                detail="The 'to' timestamp must include a timezone offset.",
-            )
+            raise HTTPException(status_code=422, detail="'to' must include a timezone offset.")
         start = end - timedelta(hours=24)
     elif end is None:
         end = start + timedelta(hours=24)
 
     assert start is not None and end is not None
     if start.tzinfo is None or start.utcoffset() is None:
-        raise HTTPException(
-            status_code=422,
-            detail="The 'from' timestamp must include a timezone offset.",
-        )
+        raise HTTPException(status_code=422, detail="'from' must include a timezone offset.")
     if end.tzinfo is None or end.utcoffset() is None:
-        raise HTTPException(
-            status_code=422,
-            detail="The 'to' timestamp must include a timezone offset.",
-        )
+        raise HTTPException(status_code=422, detail="'to' must include a timezone offset.")
 
-    start_local = start.astimezone(TOKYO)
-    end_local = end.astimezone(TOKYO)
+    start_local = start.astimezone(tz)
+    end_local = end.astimezone(tz)
     if end_local <= start_local:
         raise HTTPException(status_code=422, detail="'to' must be later than 'from'.")
     if end_local - start_local > MAX_WINDOW:
-        raise HTTPException(
-            status_code=422,
-            detail="Requested window is too large; maximum range is 7 days.",
-        )
+        raise HTTPException(status_code=422, detail="Maximum range is 7 days.")
     return start_local, end_local
 
 
 def _validate_region(region: str) -> None:
-    if region != REGION["id"]:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Unknown region '{region}'. Only the jp-demo fixture exists.",
-        )
+    if region not in {REGION["id"], US_REGION["id"]}:
+        raise HTTPException(status_code=404, detail=f"Unknown region '{region}'.")
 
 
 def _build_programmes(
     start: datetime,
     end: datetime,
     channel_id: str | None = None,
+    channels: list[dict[str, Any]] | None = None,
+    *,
+    demo: bool = True,
 ) -> list[dict[str, Any]]:
-    selected_channels = CHANNELS
+    channels = channels if channels is not None else CHANNELS
+    selected = channels
     if channel_id is not None:
-        selected_channels = [ch for ch in CHANNELS if ch["id"] == channel_id]
-        if not selected_channels:
-            raise HTTPException(
-                status_code=404, detail=f"Unknown demo channel '{channel_id}'."
-            )
+        selected = [ch for ch in channels if ch["id"] == channel_id]
+        if not selected:
+            raise HTTPException(status_code=404, detail=f"Unknown channel '{channel_id}'.")
 
     programmes: list[dict[str, Any]] = []
     first_hour = start.replace(minute=0, second=0, microsecond=0)
     if first_hour < start:
         first_hour += timedelta(hours=1)
 
-    for channel_index, channel in enumerate(selected_channels):
+    for index, channel in enumerate(selected):
         current = first_hour
         while current < end:
-            slot = (current.hour + channel_index) % 24
-            programme_start = current
-            programme_end = current + timedelta(hours=1)
+            slot = (current.hour + index) % 24
+            if channel["region"] == "us":
+                choices = US_DEMO_TITLES[channel["id"]]
+                title = choices[(slot // 3) % len(choices)]
+            else:
+                title = f"Demo programme {slot + 1:02d}"
             programmes.append(
                 {
-                    "id": f"{channel['id']}-{programme_start:%Y%m%d%H}",
+                    "id": f"{channel['id']}-{current:%Y%m%d%H}",
                     "channel_id": channel["id"],
                     "channel_name": channel["name"],
-                    "start": programme_start.isoformat(),
-                    "end": programme_end.isoformat(),
-                    "title": f"Demo programme {slot + 1:02d}",
-                    "title_ja": f"サンプル番組 {slot + 1:02d}",
+                    "start": current.isoformat(),
+                    "end": (current + timedelta(hours=1)).isoformat(),
+                    "title": title,
+                    "title_ja": title if channel["region"] == "us" else f"サンプル番組 {slot + 1:02d}",
                     "description": (
-                        "Synthetic placeholder schedule for development only. "
-                        "This is not real broadcast information."
+                        "DEMO LISTING — not a real broadcast schedule."
+                        if demo else ""
                     ),
-                    "genre": "demo",
-                    "is_demo": True,
+                    "genre": "demo" if demo else "unknown",
+                    "is_demo": demo,
                 }
             )
             current += timedelta(hours=1)
@@ -165,46 +178,95 @@ def _build_programmes(
     return programmes
 
 
+def _configured_or_demo_us(
+    start: datetime, end: datetime, channel_id: str | None = None
+) -> list[dict[str, Any]]:
+    imported = configured_us_programmes()
+    if imported is not None:
+        output = []
+        for programme in imported:
+            programme_start = datetime.fromisoformat(programme["start"])
+            programme_end = datetime.fromisoformat(programme["end"])
+            if programme_end <= start or programme_start >= end:
+                continue
+            if channel_id is not None and programme["channel_id"] != channel_id:
+                continue
+            output.append({**programme, "genre": "unknown", "title_ja": programme["title"]})
+        if channel_id is not None and not any(p["channel_id"] == channel_id for p in output):
+            # It may simply have no programme in this requested window.
+            known_ids = {p["channel_id"] for p in imported}
+            if channel_id not in known_ids:
+                raise HTTPException(status_code=404, detail=f"Unknown XMLTV channel '{channel_id}'.")
+        output.sort(key=lambda item: (item["start"], item["channel_id"]))
+        return output
+
+    return _build_programmes(start, end, channel_id, US_CHANNELS, demo=True)
+
+
+def _safe_field(value: str, max_len: int = 180) -> str:
+    return (
+        value.replace("|", "/")
+        .replace("\\", "/")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace("\t", " ")
+        .strip()[:max_len]
+    )
+
+
 @app.get("/health", tags=["status"])
 def health() -> dict[str, str]:
-    """Return a simple readiness result."""
     return {"status": "ok", "service": APP_NAME, "stage": "development"}
 
 
 @app.get("/api/v1/regions", tags=["guide"])
 def list_regions() -> list[dict[str, str]]:
-    """List currently configured guide regions."""
-    return [REGION]
+    return [REGION, US_REGION]
 
 
 @app.get("/api/v1/channels", tags=["guide"])
 def list_channels(
     region: str = Query(default="jp-demo", description="Guide-region identifier"),
 ) -> list[dict[str, Any]]:
-    """List synthetic channels for a configured region."""
     _validate_region(region)
-    return CHANNELS
+    if region == "jp-demo":
+        return CHANNELS
+    imported = configured_us_programmes()
+    if imported is None:
+        return US_CHANNELS
+    seen: set[str] = set()
+    channels: list[dict[str, Any]] = []
+    for programme in imported:
+        channel_id = programme["channel_id"]
+        if channel_id in seen:
+            continue
+        seen.add(channel_id)
+        channels.append(
+            {
+                "id": channel_id,
+                "name": programme["channel_name"],
+                "name_ja": "",
+                "broadcast_type": "xmltv",
+                "channel_number": str(len(channels) + 1),
+                "region": "us",
+            }
+        )
+    return channels
 
 
 @app.get("/api/v1/programmes", tags=["guide"])
 def list_programmes(
     region: str = Query(default="jp-demo", description="Guide-region identifier"),
-    start: datetime | None = Query(
-        default=None, alias="from", description="Inclusive ISO-8601 timestamp"
-    ),
-    end: datetime | None = Query(
-        default=None, alias="to", description="Exclusive ISO-8601 timestamp"
-    ),
+    start: datetime | None = Query(default=None, alias="from", description="Inclusive ISO-8601 timestamp"),
+    end: datetime | None = Query(default=None, alias="to", description="Exclusive ISO-8601 timestamp"),
     channel_id: str | None = Query(default=None, description="Optional channel filter"),
 ) -> list[dict[str, Any]]:
-    """Return synthetic programme slots for an ISO-8601 time window.
-
-    When omitted, the window is the next 24 hours. Query timestamps must include
-    timezone offsets; the API returns times normalized to Japan Standard Time.
-    """
     _validate_region(region)
-    window_start, window_end = _resolve_window(start, end)
-    return _build_programmes(window_start, window_end, channel_id)
+    tz = TOKYO if region == "jp-demo" else EASTERN
+    window_start, window_end = _resolve_window(start, end, tz)
+    if region == "jp-demo":
+        return _build_programmes(window_start, window_end, channel_id, CHANNELS, demo=True)
+    return _configured_or_demo_us(window_start, window_end, channel_id)
 
 
 def _xmltv_time(value: str) -> str:
@@ -218,23 +280,30 @@ def export_xmltv(
     start: datetime | None = Query(default=None, alias="from"),
     end: datetime | None = Query(default=None, alias="to"),
 ) -> Response:
-    """Export synthetic sample listings as XMLTV for integration testing."""
     _validate_region(region)
-    window_start, window_end = _resolve_window(start, end)
+    tz = TOKYO if region == "jp-demo" else EASTERN
+    window_start, window_end = _resolve_window(start, end, tz)
+    channels = CHANNELS if region == "jp-demo" else list_channels(region)
+    programmes = (
+        _build_programmes(window_start, window_end, channels=CHANNELS)
+        if region == "jp-demo"
+        else _configured_or_demo_us(window_start, window_end)
+    )
 
     root = ET.Element(
         "tv",
         {
-            "source-info-name": "TV Guide Channel Wii development fixture",
+            "source-info-name": "TV Guide USA development API",
             "generator-info-name": "tv-guide-channel-wii",
         },
     )
-    for channel in CHANNELS:
+    for channel in channels:
         element = ET.SubElement(root, "channel", {"id": channel["id"]})
         ET.SubElement(element, "display-name", {"lang": "en"}).text = channel["name"]
-        ET.SubElement(element, "display-name", {"lang": "ja"}).text = channel["name_ja"]
+        if channel.get("name_ja"):
+            ET.SubElement(element, "display-name", {"lang": "ja"}).text = channel["name_ja"]
 
-    for programme in _build_programmes(window_start, window_end):
+    for programme in programmes:
         element = ET.SubElement(
             root,
             "programme",
@@ -245,9 +314,55 @@ def export_xmltv(
             },
         )
         ET.SubElement(element, "title", {"lang": "en"}).text = programme["title"]
-        ET.SubElement(element, "title", {"lang": "ja"}).text = programme["title_ja"]
-        ET.SubElement(element, "desc", {"lang": "en"}).text = programme["description"]
-        ET.SubElement(element, "category", {"lang": "en"}).text = "Demo"
-
+        ET.SubElement(element, "desc", {"lang": "en"}).text = programme.get("description", "")
+        if programme.get("is_demo"):
+            ET.SubElement(element, "category", {"lang": "en"}).text = "Demo"
     body = ET.tostring(root, encoding="utf-8", xml_declaration=True)
     return Response(content=body, media_type="application/xml")
+
+
+@app.get("/api/v1/wii/guide.txt", tags=["Wii channel"])
+def wii_guide_text(
+    region: str = Query(default="us", description="US-English guide region"),
+) -> Response:
+    """Return a tiny pipe-delimited guide payload for the Wii homebrew client.
+
+    This is a project-specific development protocol. The production feed is
+    controlled via TV_GUIDE_XMLTV_PATH; otherwise every record is marked demo.
+    """
+    if region != "us":
+        raise HTTPException(status_code=404, detail="The Wii client currently supports region 'us'.")
+    start, end = _resolve_window(None, None, EASTERN)
+    end = start + timedelta(hours=6)
+    programmes = _configured_or_demo_us(start, end)
+    imported = configured_us_programmes() is not None
+    mode = "LIVE" if imported else "DEMO"
+    lines = [f"TVGUIDE|1|US-EN|America/New_York|{mode}"]
+    channels: dict[str, str] = {}
+    for programme in programmes:
+        channel_id = _safe_field(programme["channel_id"], 60)
+        channels.setdefault(channel_id, _safe_field(programme["channel_name"], 80))
+    for channel_id, name in channels.items():
+        lines.append(f"CHANNEL|{channel_id}|{name}")
+    per_channel: dict[str, int] = {}
+    for programme in programmes:
+        channel_id = _safe_field(programme["channel_id"], 60)
+        per_channel[channel_id] = per_channel.get(channel_id, 0) + 1
+        if per_channel[channel_id] > 4:
+            continue
+        start_dt = datetime.fromisoformat(programme["start"]).astimezone(EASTERN)
+        end_dt = datetime.fromisoformat(programme["end"]).astimezone(EASTERN)
+        lines.append(
+            "PROGRAM|"
+            + "|".join(
+                [
+                    channel_id,
+                    start_dt.strftime("%I:%M %p").lstrip("0"),
+                    end_dt.strftime("%I:%M %p").lstrip("0"),
+                    _safe_field(programme["title"], 120),
+                    _safe_field(programme.get("description", ""), 180),
+                ]
+            )
+        )
+    lines.append("END")
+    return Response(content="\n".join(lines) + "\n", media_type="text/plain; charset=utf-8")
