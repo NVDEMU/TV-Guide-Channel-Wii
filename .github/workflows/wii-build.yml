@@ -7,12 +7,6 @@ on:
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
-    inputs:
-      package_wad:
-        description: "Also build an installable WAD (requires TV_GUIDE_BASE_WAD_URL repository secret)"
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: write
@@ -26,7 +20,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Python for the build tools
+      - name: Set up Python for build tools
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -89,58 +83,11 @@ jobs:
             wii/tv-guide-usa.elf
             wii/tv-guide-usa.map
 
-  publish-nightly:
-    name: Publish TV Guide USA Nightly DOL and guide files
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
-    needs: [build-wii, build-guide-snapshot]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download build output
-        uses: actions/download-artifact@v6
-        with:
-          name: tv-guide-usa-wii-${{ github.sha }}
-          path: dist
-
-      - name: Download guide snapshots
-        uses: actions/download-artifact@v6
-        with:
-          name: tv-guide-usa-guide-files-${{ github.sha }}
-          path: dist/guide-files
-
-      - name: Publish or update nightly release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          name: TV Guide USA Nightly
-          body: |
-            Automated US-English Wii homebrew frontend build from the latest main commit.
-
-            The DOL includes a compact TVmaze US schedule snapshot, with TVmaze attribution/CC BY-SA requirements shown in the UI. The separate timezone guide files can also be placed on an emulated SD card for testing. TVmaze is episode-centric and is not a full local-affiliate grid.
-
-            The release includes DOL/ELF/map, the four timezone guide text files, and source-status metadata. It is not an installable WAD. Manual WAD packaging is available from Actions -> Wii Channel Build -> Run workflow; set the TV_GUIDE_BASE_WAD_URL repository secret and enable package_wad. See docs/WAD-BUILD.md and docs/GUIDE-SOURCES.md. Test in Dolphin before attempting real hardware.
-          prerelease: true
-          make_latest: false
-          overwrite_files: true
-          fail_on_unmatched_files: true
-          files: |
-            dist/tv-guide-usa.dol
-            dist/tv-guide-usa.elf
-            dist/tv-guide-usa.map
-            dist/guide-files/guide-eastern.txt
-            dist/guide-files/guide-central.txt
-            dist/guide-files/guide-mountain.txt
-            dist/guide-files/guide-pacific.txt
-            dist/guide-files/source-status.json
-
   package-installable-wad:
-    name: Build installable WAD and Dolphin test kit
-    if: github.event_name == 'workflow_dispatch' && inputs.package_wad
-    needs: [build-wii, build-guide-snapshot]
+    name: Build standalone WAD and Dolphin test kit
     runs-on: macos-latest
     timeout-minutes: 25
-    env:
-      TV_GUIDE_BASE_WAD_URL: ${{ secrets.TV_GUIDE_BASE_WAD_URL }}
-      TV_GUIDE_BASE_WAD_TOKEN: ${{ secrets.TV_GUIDE_BASE_WAD_TOKEN }}
+    needs: [build-wii, build-guide-snapshot]
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -161,45 +108,29 @@ jobs:
           name: tv-guide-usa-wii-${{ github.sha }}
           path: dist
 
-      - name: Download guide snapshots
+      - name: Download generated guide snapshots
         uses: actions/download-artifact@v6
         with:
           name: tv-guide-usa-guide-files-${{ github.sha }}
           path: build/guide
 
-      - name: Download and validate your base WAD
-        run: |
-          if [[ -z "${TV_GUIDE_BASE_WAD_URL:-}" ]]; then
-            echo "::error::Set the TV_GUIDE_BASE_WAD_URL repository Actions secret to a direct, temporarily valid download URL for your own base WAD."
-            exit 1
-          fi
-          CURL_AUTH=()
-          if [[ -n "${TV_GUIDE_BASE_WAD_TOKEN:-}" ]]; then
-            CURL_AUTH=(-H "Authorization: Bearer ${TV_GUIDE_BASE_WAD_TOKEN}" -H "Accept: application/octet-stream")
-          fi
-          curl --fail --silent --show-error --location --retry 2 --max-time 180 \
-            --max-filesize 200000000 "${CURL_AUTH[@]}" "$TV_GUIDE_BASE_WAD_URL" \
-            --output "$RUNNER_TEMP/TV-no-Tomo-base.wad"
-          test -s "$RUNNER_TEMP/TV-no-Tomo-base.wad"
-          python tools/inspect_wad.py "$RUNNER_TEMP/TV-no-Tomo-base.wad"
-
-      - name: Prepare and build the WAD packager
+      - name: Fetch and build WadPakk's bundled-template packager
         run: |
           mkdir -p .tools
           git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
+          test -s .tools/WadPakk/Resources/base.wad
           python tools/prepare_wad_tool.py .tools/WadPakk
           dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release
           dotnet build tools/wad-assets/WadAssetExtractor.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
 
-      - name: Package the WAD
+      - name: Package WAD without a user-supplied base
         env:
           TV_GUIDE_DOL: ${{ github.workspace }}/dist/tv-guide-usa.dol
-          TV_GUIDE_BASE_WAD: ${{ runner.temp }}/TV-no-Tomo-base.wad
           TV_GUIDE_WAD_OUTPUT: ${{ github.workspace }}/build/TV-Guide-USA.wad
           WADPAKK_DIR: ${{ github.workspace }}/.tools/WadPakk
         run: bash tools/package-wad.sh
 
-      - name: Assemble Dolphin test kit
+      - name: Assemble Dolphin Homebrew Channel test kit
         run: |
           mkdir -p build/TV-Guide-USA-Dolphin-Test-Kit/sd/apps/tv-guide-channel-wii
           cp dist/tv-guide-usa.dol build/TV-Guide-USA-Dolphin-Test-Kit/sd/apps/tv-guide-channel-wii/boot.dol
@@ -207,9 +138,10 @@ jobs:
           cp wii/config.ini.example build/TV-Guide-USA-Dolphin-Test-Kit/sd/apps/tv-guide-channel-wii/config.ini.example
           cp build/TV-Guide-USA.wad build/TV-Guide-USA-Dolphin-Test-Kit/
           cp build/guide/source-status.json build/TV-Guide-USA-Dolphin-Test-Kit/
+          printf '%s\n' 'This is a standalone prototype WAD; the original TV no Tomo UI/assets have not been patched.' > build/TV-Guide-USA-Dolphin-Test-Kit/PROTOTYPE-NOTICE.txt
           cd build && zip -qr TV-Guide-USA-Dolphin-Test-Kit.zip TV-Guide-USA-Dolphin-Test-Kit
 
-      - name: Upload installable WAD and Dolphin test kit
+      - name: Upload WAD and Dolphin test kit
         uses: actions/upload-artifact@v6
         with:
           name: tv-guide-usa-wad-${{ github.sha }}
@@ -217,6 +149,59 @@ jobs:
           path: |
             build/TV-Guide-USA.wad
             build/TV-Guide-USA-Dolphin-Test-Kit.zip
+
+  publish-nightly:
+    name: Publish TV Guide USA Nightly DOL, WAD, and guide files
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
+    needs: [build-wii, build-guide-snapshot, package-installable-wad]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download DOL build output
+        uses: actions/download-artifact@v6
+        with:
+          name: tv-guide-usa-wii-${{ github.sha }}
+          path: dist
+
+      - name: Download guide snapshots
+        uses: actions/download-artifact@v6
+        with:
+          name: tv-guide-usa-guide-files-${{ github.sha }}
+          path: dist/guide-files
+
+      - name: Download WAD and Dolphin test kit
+        uses: actions/download-artifact@v6
+        with:
+          name: tv-guide-usa-wad-${{ github.sha }}
+          path: dist/wad
+
+      - name: Publish or update nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: TV Guide USA Nightly
+          body: |
+            Automated US-English Wii homebrew prototype build from the latest main commit.
+
+            This release includes a DOL, standalone WAD, Dolphin/Homebrew Channel test kit, and four TVmaze schedule snapshots. It no longer requires a Japanese base WAD to generate the standalone prototype WAD.
+
+            Important: this standalone prototype WAD does not yet reproduce or translate the original TV no Tomo application/banner. It uses a generic homebrew WAD template and a new app frontend. The next milestone is reverse-engineering/localizing the original title while preserving its original interface. The built-in TVmaze schedule snapshot is CC BY-SA; attribution is shown in the UI.
+            
+            Recommended: install the WAD in a separate Dolphin NAND for testing. A successful build is not proof that it boots on every emulator/hardware configuration. Do not install on real hardware until Dolphin testing succeeds.
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/tv-guide-usa.dol
+            dist/tv-guide-usa.elf
+            dist/tv-guide-usa.map
+            dist/guide-files/guide-eastern.txt
+            dist/guide-files/guide-central.txt
+            dist/guide-files/guide-mountain.txt
+            dist/guide-files/guide-pacific.txt
+            dist/guide-files/source-status.json
+            dist/wad/TV-Guide-USA.wad
+            dist/wad/TV-Guide-USA-Dolphin-Test-Kit.zip
 
   wad-tools-check:
     name: Validate guide and WAD packaging tools
