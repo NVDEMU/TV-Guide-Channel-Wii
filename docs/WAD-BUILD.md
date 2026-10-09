@@ -4,9 +4,19 @@
 
 The default GitHub Actions workflow builds a DOL and a standalone prototype WAD automatically on pushes to `main` and scheduled guide refreshes. It does **not** need the user's Japanese TV no Tomo WAD, a base-WAD secret, Python on the user's Mac, or .NET on the user's Mac.
 
-The standalone WAD is constructed with [WadPakk](https://github.com/davi-x86/WadPakk), using its own bundled generic template at `Resources/base.wad`. The WAD gets title ID `0001000154564731` (`TVG1`), channel title `TV Guide USA`, a USA TMD region and startup IOS 58.
+The standalone prototype WAD is constructed with [WadPakk](https://github.com/davi-x86/WadPakk), using its bundled generic template at `Resources/base.wad`. It gets title ID `0001000154564731` (`TVG1`), title `TV Guide USA`, USA TMD region and startup IOS 58. It is a generic homebrew prototype, not the original TV no Tomo UI.
 
 The Nightly release includes `TV-Guide-USA.wad`, `tv-guide-usa.dol`, four timezone guide snapshots, source-status metadata and `TV-Guide-USA-Dolphin-Test-Kit.zip`.
+
+## Native TV no Tomo interface preview (no locally supplied base WAD)
+
+A separate manual workflow attempts to fetch the original title (0001000148424e4a) from Nintendo's title server in a temporary GitHub runner directory, patch selected native message strings plus Wii Menu title/region metadata, validate the output, then upload a short-lived (one-day) artifact for Dolphin testing. The original title/WAD is never committed to this repository or attached to the permanent Nightly release.
+
+To try it, open **Actions → Wii Channel Build → Run workflow**, check **build_native_preview**, and start the run. If NUS still serves the title and the patch succeeds, download the artifact named tv-guide-usa-native-ui-preview-<commit> from that run.
+
+This is an early native UI localization preview, not a release. It preserves the original executable, layouts, graphics, banner animation, sound and controls, changes the Wii Menu title to TV Guide USA, and translates a starter set of BMG messages. It is not a complete translation yet, some Japanese labels/images remain, and the original app still requests the discontinued TV no Tomo service. The TVmaze/XMLTV API has not yet been adapted to the original protocol.
+
+If the native-preview job fails, check the first failing step. NUS may no longer serve the title, or a UI resource format may need adjusting.
 
 ## Test in Dolphin
 
