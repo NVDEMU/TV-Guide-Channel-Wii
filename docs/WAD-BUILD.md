@@ -15,6 +15,19 @@ The supplied `TV no Toma (Japan) (Channel).wad` has already been checked locally
 
 Do not upload a base WAD, Wii keys, tickets, certificates, NAND backup, or proprietary channel executable to this public repository.
 
+## Build the WAD entirely on GitHub (no local Python/.NET)
+
+A GitHub Actions workflow now compiles the Wii DOL, fetches the attributed TVmaze snapshot, validates the supplied base WAD and packages an installable WAD on a GitHub runner.
+
+1. Store a download URL for your own base WAD as the repository Actions secret `TV_GUIDE_BASE_WAD_URL`. Use a private or short-lived URL; the workflow does not need the WAD to be committed to the source repository.
+2. Open **Actions → Wii Channel Build → Run workflow**.
+3. Check **package_wad** and run it.
+4. Download the `tv-guide-usa-wad-<commit>` artifact. It contains `TV-Guide-USA.wad` and `TV-Guide-USA-Dolphin-Test-Kit.zip`.
+
+The URL must let the runner download the file without interactive login and must remain valid for the duration of the run. Avoid a URL that contains a long-term account credential; a short-lived signed download URL is preferable. A GitHub Actions dispatch form cannot directly upload a 31 MB WAD binary, which is why the workflow accepts a URL secret.
+
+The regular build also publishes the DOL and four timezone-specific guide text files. The test kit places them at `sd:/apps/tv-guide-channel-wii/` for Homebrew Channel testing. The DOL embeds a compact TVmaze episode schedule (CC BY-SA with attribution) so the channel can show sourced entries even when a local server is unavailable. TVmaze is not a full station-by-station affiliate grid.
+
 ## Build the DOL
 
 ```sh
@@ -56,7 +69,7 @@ The output title ID is `0001000154564731` (`TVG1`), channel title is `TV Guide U
 2. Test the WAD in a separate Dolphin user profile/NAND and confirm the displayed title, banner behavior, network connection and guide UI.
 3. Only after successful emulation tests should you consider a real Wii.
 
-A malformed WAD can brick a console. Keep a verified NAND backup and brick-protection setup before installing. CI builds the DOL and checks the packaging tools; it does not publish a WAD because the base WAD is local user content.
+A malformed WAD can brick a console. Keep a verified NAND backup and brick-protection setup before installing. CI builds the DOL and checks the packaging tools. The optional manual WAD job consumes a user-supplied download URL only when explicitly requested; the base WAD is not committed to the repo or published as an artifact.
 
 ## Important scope distinction
 
