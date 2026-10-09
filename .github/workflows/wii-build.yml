@@ -32,7 +32,8 @@ jobs:
       - name: Verify expected DOL exists
         run: |
           test -s wii/tv-guide-usa.dol
-          file wii/tv-guide-usa.dol
+          test -s wii/tv-guide-usa.elf
+          test -s wii/tv-guide-usa.map
 
       - name: Upload development build
         uses: actions/upload-artifact@v6
