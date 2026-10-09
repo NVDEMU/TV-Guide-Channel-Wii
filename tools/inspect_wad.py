@@ -117,31 +117,53 @@ def inspect_wad(path: str | Path) -> dict[str, Any]:
     if table_end > len(tmd):
         raise WadFormatError("TMD content table is truncated.")
 
-    contents: list[dict[str, Any]] = []
-    content_cursor = data_offset
+    # TMD records are not guaranteed to be listed in the physical order used
+    # by the WAD data section. libWiiSharp/Wii WAD writers place contents in
+    # content-index order and pad between contents to 0x40-byte boundaries.
+    raw_contents: list[dict[str, int]] = []
+    seen_indices: set[int] = set()
     for index in range(content_count):
         record_offset = content_table_offset + index * 36
         content_id = _u32(tmd, record_offset, f"content[{index}].id")
         content_index = _u16(tmd, record_offset + 4, f"content[{index}].index")
         content_type = _u16(tmd, record_offset + 6, f"content[{index}].type")
         content_length = _u64(tmd, record_offset + 8, f"content[{index}].size")
-        encrypted_length = _align(content_length, CONTENT_ALIGNMENT)
-        content_end = content_cursor + encrypted_length
-        if content_end > data_end:
-            raise WadFormatError(
-                f"Content record {index} extends beyond the WAD data section."
-            )
-        contents.append(
+        if content_index in seen_indices:
+            raise WadFormatError(f"Duplicate TMD content index {content_index}.")
+        seen_indices.add(content_index)
+        raw_contents.append(
             {
                 "content_id": content_id,
                 "index": content_index,
-                "type": f"0x{content_type:04X}",
+                "type": content_type,
                 "plain_size": content_length,
-                "stored_size": encrypted_length,
+                "stored_size": _align(content_length, CONTENT_ALIGNMENT),
+            }
+        )
+
+    raw_contents.sort(key=lambda item: item["index"])
+    contents: list[dict[str, Any]] = []
+    content_cursor = data_offset
+    for position, item in enumerate(raw_contents):
+        content_end = content_cursor + item["stored_size"]
+        if content_end > data_end:
+            raise WadFormatError(
+                f"Content index {item['index']} extends beyond the WAD data section."
+            )
+        contents.append(
+            {
+                **item,
+                "type": f"0x{item['type']:04X}",
                 "data_offset": content_cursor,
             }
         )
-        content_cursor = _align(content_end, WAD_ALIGNMENT)
+        # The final content is not necessarily padded inside the declared
+        # data section; the enclosing WAD footer offset is aligned separately.
+        content_cursor = (
+            _align(content_end, WAD_ALIGNMENT)
+            if position < len(raw_contents) - 1
+            else content_end
+        )
 
     if content_cursor > data_end:
         raise WadFormatError("Padded content records exceed the WAD data section.")
