@@ -2,7 +2,7 @@
 
 An open-source revival project for the Japanese **TV no Tomo Channel: G-Guide for Wii**.
 
-> **Current status: research and backend scaffold.** The service in this repository is a working development API with clearly marked synthetic demo listings. It is **not yet compatible with the original Wii channel's network protocol**, and its demo schedules are not real TV listings.
+> **Current status: research and backend scaffold.** The repository now includes a working development API, a bounds-checked reader for the documented HDPK 001B EPG structure, and clearly marked synthetic demo listings. The parser has only been tested against synthetic fixtures—not an authentic channel file—and the service is **not yet compatible with the original Wii channel's network protocol**. Demo schedules are not real TV listings.
 
 ## Project plan
 
@@ -19,7 +19,8 @@ An open-source revival project for the Japanese **TV no Tomo Channel: G-Guide fo
 - `GET /api/v1/channels?region=jp-demo` — synthetic demo channels.
 - `GET /api/v1/programmes?region=jp-demo&from=...&to=...` — synthetic programmes over an ISO-8601 time range.
 - `GET /api/v1/guide.xml?region=jp-demo` — XMLTV-formatted demo output for testing integrations.
-- Input validation and automated API tests.
+- A structural EPG package reader in `backend/hdpk.py` that checks offsets and reads channel/program records without claiming to decode the companion text package.
+- Input validation and automated tests for API responses, XMLTV output, and malformed synthetic EPG files.
 - Docker image for local/server deployment.
 
 These endpoints are **our development API**, not claims about the endpoints or file formats expected by the original channel.
