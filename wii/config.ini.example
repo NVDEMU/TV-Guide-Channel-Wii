@@ -3,3 +3,4 @@
 # The channel currently uses HTTP for local-network development only.
 server=192.168.1.2
 port=8000
+timezone=America/New_York
