@@ -144,39 +144,47 @@ internal static class Program
             throw new InvalidDataException(
                 $"Input title ID is {wad.TitleID:X16}; expected Japanese TV no Tomo {OriginalTitleId}.");
 
-        if (!wad.TmdContents.Any(item => item.Index == 7))
-            throw new InvalidDataException("The title has no expected content index 7 UI resource archive.");
-
-        byte[] uiArchiveBytes = wad.GetContentByIndex(7);
-        using U8 uiArchive = U8.Load(uiArchiveBytes);
         var patchedNames = new List<string>();
+        var discoveredBmgFiles = new List<string>();
         int patchedMessages = 0;
-        foreach (string name in new[]
+        int patchedArchives = 0;
+
+        // Preserve and localize any banner-app text resources without changing its
+        // original banner animation, layout or art. ChannelTitles below updates the
+        // built-in Wii Menu title strings for every locale.
+        U8 bannerApp = wad.BannerApp;
+        int bannerTextChanges = PatchU8Archive(
+            bannerApp, "banner-app", translations, patchedNames, discoveredBmgFiles, 0);
+        if (bannerTextChanges > 0) patchedArchives++;
+        patchedMessages += bannerTextChanges;
+
+        // Scan every title content for U8 archives, not just one assumed index.
+        // This finds main guide UI, settings, TV remote, errors, tips and support strings.
+        foreach (var entry in wad.TmdContents.Where(item => item.Index != 0).ToArray())
         {
-            "Setting.bmg", "Remocon.bmg", "NandError.bmg", "Savedata.bmg",
-            "Support.bmg", "Tips.bmg", "TipsRemocon.bmg", "WifiError.bmg"
-        })
-        {
-            int nodeIndex = uiArchive.GetNodeIndex(name);
-            if (nodeIndex < 0) continue;
-            byte[] original = uiArchive.Data[nodeIndex];
-            byte[] translated = BmgTranslator.Translate(original, name, translations, out int changed);
+            byte[] bytes;
+            try { bytes = wad.GetContentByIndex(entry.Index); }
+            catch { continue; }
+
+            if (!CanLoadU8(bytes)) continue;
+            using U8 archive = U8.Load(bytes);
+            int changed = PatchU8Archive(
+                archive, $"{entry.Index:X4}", translations, patchedNames, discoveredBmgFiles, 0);
             if (changed == 0) continue;
-            uiArchive.ReplaceFile(nodeIndex, translated);
+
+            int contentPosition = Array.FindIndex(wad.TmdContents, item => item.Index == entry.Index);
+            ReplaceContent(wad, contentPosition, archive.ToByteArray());
             patchedMessages += changed;
-            patchedNames.Add($"{name} ({changed})");
+            patchedArchives++;
         }
 
         if (patchedMessages == 0)
             throw new InvalidDataException(
-                "No native UI strings were translated. The archive format or message indices may have changed.");
+                "No native UI strings were translated. The supplied title's BMG files or translation indices may have changed.");
 
-        byte[] patchedUi = uiArchive.ToByteArray();
-        int contentPosition = Array.FindIndex(wad.TmdContents, item => item.Index == 7);
-        ReplaceContent(wad, contentPosition, patchedUi);
-
-        // Preserve the original executable, graphics/layouts, banner animation, sound and controls.
-        // Only selected BMG messages and Wii Menu title metadata change in this preview.
+        // Preserve the original app, BRLYT/BRLAN layout and animation resources,
+        // textures, sound, controls and native executable. Only supported message
+        // tables and Wii Menu title metadata change in this preview.
         wad.ChannelTitles = EnglishTitles;
         wad.Region = Region.USA;
         wad.ChangeTitleID(LowerTitleID.Channel, NewUpperTitleId);
@@ -194,10 +202,73 @@ internal static class Program
             newTitleId = "0001000154564731",
             region = "USA",
             translatedMessageCount = patchedMessages,
+            patchedArchiveCount = patchedArchives,
             translatedResources = patchedNames,
+            discoveredBmgResources = discoveredBmgFiles,
+            localizedMenuTitleAllLanguages = true,
             preservedNativeExecutable = true,
-            warning = "This is a native-UI localization preview. Original TV no Tomo guide-service requests are not yet redirected to the US guide backend."
+            preservedOriginalBannerAnimationAndArtwork = true,
+            warning = "This is a partial native-UI localization preview. Some Japanese messages may remain and original guide-service requests are not yet redirected to the US guide backend."
         }, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static int PatchU8Archive(
+        U8 archive,
+        string archivePath,
+        IReadOnlyDictionary<string, string> translations,
+        List<string> patchedNames,
+        List<string> discoveredBmgFiles,
+        int depth)
+    {
+        if (depth > 4) return 0;
+        int translatedCount = 0;
+        string[] names = archive.StringTable;
+        U8_Node[] nodes = archive.Nodes.ToArray();
+        byte[][] data = archive.Data;
+
+        for (int i = 0; i < Math.Min(Math.Min(names.Length, nodes.Length), data.Length); i++)
+        {
+            if (nodes[i].Type != U8_NodeType.File || data[i].Length == 0) continue;
+            string resourcePath = $"{archivePath}/{names[i]}";
+            byte[] file = data[i];
+
+            if (BmgTranslator.IsBmg(file))
+            {
+                discoveredBmgFiles.Add(resourcePath);
+                byte[] patched = BmgTranslator.Translate(file, resourcePath, translations, out int changed);
+                if (changed > 0)
+                {
+                    archive.ReplaceFile(i, patched);
+                    translatedCount += changed;
+                    patchedNames.Add($"{resourcePath} ({changed})");
+                }
+                continue;
+            }
+
+            if (!CanLoadU8(file)) continue;
+            try
+            {
+                using U8 nested = U8.Load(file);
+                int nestedChanges = PatchU8Archive(
+                    nested, resourcePath, translations, patchedNames, discoveredBmgFiles, depth + 1);
+                if (nestedChanges > 0)
+                {
+                    archive.ReplaceFile(i, nested.ToByteArray());
+                    translatedCount += nestedChanges;
+                }
+            }
+            catch (Exception ex) when (ex is InvalidDataException or ArgumentException or IOException)
+            {
+                // Ignore archives that only resemble U8; preserve the original file.
+            }
+        }
+        return translatedCount;
+    }
+
+    private static bool CanLoadU8(byte[] bytes)
+    {
+        try { return bytes.Length >= 0x20 && U8.IsU8(bytes); }
+        catch { return false; }
     }
 
     private static void ReplaceContent(WAD wad, int tmdPosition, byte[] replacement)
