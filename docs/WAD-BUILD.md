@@ -14,7 +14,7 @@ A separate job attempts to fetch the original title (0001000148424e4a) from Nint
 
 To get the latest preview, open the latest **Wii Channel Build** workflow run and download the `tv-guide-usa-native-ui-preview-<commit>` artifact. It expires after one day. Manual trigger: **Actions → Wii Channel Build → Run workflow → build_native_preview**.
 
-This is an early native UI localization preview, not a release. It preserves the original executable, layouts, graphics, banner animation, sound and controls, changes the Wii Menu title to TV Guide USA, and translates a starter set of BMG messages. It is not a complete translation yet, some Japanese labels/images remain, and the original app still requests the discontinued TV no Tomo service. The TVmaze/XMLTV API has not yet been adapted to the original protocol.
+This is an early native UI localization preview, not a release. It preserves the original executable, layouts, graphics, banner animation, sound and controls, changes the Wii Menu title metadata to TV Guide USA for all eight locales, and now has 213 English mappings for messages across eight native BMG resources. The expanded set still needs visual review; some Japanese strings may be outside those message resources, and the original app still requests the discontinued TV no Tomo service. The TVmaze/XMLTV API has not yet been adapted to the original protocol.
 
 If the native-preview job fails, check the first failing step. NUS may no longer serve the title, or a UI resource format may need adjusting.
 
@@ -46,7 +46,7 @@ Optional variables:
 - `TV_GUIDE_WAD_OUTPUT` — output path (default `build/TV-Guide-USA.wad`).
 - `WADPAKK_DIR` — pre-existing WadPakk checkout.
 
-## Important limitation: original TV no Tomo UI is not yet translated
+## Important limitation: original TV no Tomo UI is not fully translated
 
 The standalone WAD currently contains this project's homebrew DOL and uses banner/icon archives from WadPakk's generic template. It is **not** the same as the original TV no Tomo channel with English labels. Preserving the original interface means localizing/adapting the original app, its strings, graphics/layout and service protocol (or reproducing the interface in our own GX UI). That is separate from the WAD packaging task. The project docs intentionally do not claim that the modern XMLTV backend speaks the original guide protocol.
 
