@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+# Executing this script by path sets sys.path[0] to tools/, so add the repo
+# root explicitly before importing the shared WAD parser.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tools.inspect_wad import (
     CONTENT_ALIGNMENT,
