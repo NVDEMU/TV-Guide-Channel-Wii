@@ -197,7 +197,9 @@ def _configured_or_demo_us(
             known_ids = {p["channel_id"] for p in imported}
             if channel_id not in known_ids:
                 raise HTTPException(status_code=404, detail=f"Unknown XMLTV channel '{channel_id}'.")
-        output.sort(key=lambda item: (item["start"], item["channel_id"]))
+        output.sort(
+            key=lambda item: (datetime.fromisoformat(item["start"]), item["channel_id"])
+        )
         return output
 
     return _build_programmes(start, end, channel_id, US_CHANNELS, demo=True)
@@ -351,7 +353,7 @@ def wii_guide_text(
     end = start + timedelta(hours=6)
     programmes = _configured_or_demo_us(start, end)
     imported = configured_us_programmes() is not None
-    mode = "LIVE" if imported else "DEMO"
+    mode = "FEED" if imported else "DEMO"
     lines = [f"TVGUIDE|1|US-EN|{timezone_name}|{mode}"]
     channels: dict[str, str] = {}
     for programme in programmes:
