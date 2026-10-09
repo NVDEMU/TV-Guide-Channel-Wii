@@ -250,7 +250,8 @@ jobs:
 
   native-ui-preview:
     name: Build native TV no Tomo UI localization preview
-    if: github.event_name == 'workflow_dispatch' && inputs.build_native_preview
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.build_native_preview)
+    continue-on-error: true
     runs-on: macos-latest
     timeout-minutes: 25
     steps:
