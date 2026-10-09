@@ -78,6 +78,44 @@ internal static class BmgTranslator
         return result;
     }
 
+    public static void SelfTest()
+    {
+        // Minimal two-section UTF-16BE BMG: one string "Old" at DAT1 payload offset 2.
+        byte[] source = new byte[96];
+        "MESGbmg1"u8.CopyTo(source);
+        WriteU32(source, 8, (uint)source.Length);
+        WriteU32(source, 12, 2);
+
+        int inf = 32;
+        "INF1"u8.CopyTo(source.AsSpan(inf, 4));
+        WriteU32(source, inf + 4, 32);
+        WriteU16(source, inf + 8, 1);
+        WriteU16(source, inf + 10, 4);
+        WriteU32(source, inf + 16, 2);
+
+        int dat = 64;
+        "DAT1"u8.CopyTo(source.AsSpan(dat, 4));
+        WriteU32(source, dat + 4, 32);
+        BigEndianUtf16.GetBytes("Old").CopyTo(source, dat + 8 + 2);
+
+        byte[] translated = Translate(
+            source,
+            "Test.bmg",
+            new Dictionary<string, string> { ["Test.bmg:0"] = "New text" },
+            out int changed);
+        if (changed != 1)
+            throw new InvalidDataException($"Expected to translate one BMG message, found {changed}.");
+
+        int translatedInf = FindSection(translated, "INF1");
+        int translatedDat = FindSection(translated, "DAT1");
+        uint offset = ReadU32(translated, translatedInf + 16);
+        int start = translatedDat + 8 + checked((int)offset);
+        int end = FindNullTerminator(translated, start, translatedDat + checked((int)ReadU32(translated, translatedDat + 4)));
+        string roundTripText = BigEndianUtf16.GetString(translated, start, end - start);
+        if (!string.Equals(roundTripText, "New text", StringComparison.Ordinal))
+            throw new InvalidDataException($"BMG round-trip mismatch: '{roundTripText}'.");
+    }
+
     private static byte[] BuildInfoSection(byte[] oldHeader, int count, IReadOnlyList<uint> offsets)
     {
         int length = Align(16 + count * 4, 32);
