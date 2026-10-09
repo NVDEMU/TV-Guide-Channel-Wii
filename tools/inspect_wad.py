@@ -109,6 +109,8 @@ def inspect_wad(path: str | Path) -> dict[str, Any]:
         raise WadFormatError("TMD title ID is truncated.")
 
     title_id = tmd[title_id_offset : title_id_offset + 8]
+    region_code = _u16(tmd, body_offset + 0x5C, "tmd.region")
+    region_names = {0: "Japan", 1: "USA", 2: "Europe", 3: "Free"}
     content_count = _u16(tmd, content_count_offset, "tmd.content_count")
     boot_index = _u16(tmd, boot_index_offset, "tmd.boot_index")
     table_end = content_table_offset + content_count * 36
@@ -154,6 +156,8 @@ def inspect_wad(path: str | Path) -> dict[str, Any]:
         "tmd_signature_type": f"0x{signature_type:08X}",
         "content_count": content_count,
         "boot_index": boot_index,
+        "region_code": region_code,
+        "region_name": region_names.get(region_code, f"Unknown ({region_code})"),
         "data_size": data_size,
         "section_offsets": {
             "cert": cert_offset,
@@ -166,7 +170,7 @@ def inspect_wad(path: str | Path) -> dict[str, Any]:
         "contents": contents,
         "notes": [
             "This is structural validation only; it does not decrypt content or verify signatures.",
-            "The TMD does not expose a standalone region code at the inspected field offsets.",
+            "The TMD region field is read at the TMD body's region field offset; nearby reserved bytes must not be interpreted as region metadata.",
         ],
     }
 
