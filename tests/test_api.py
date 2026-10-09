@@ -110,6 +110,23 @@ def test_xmltv_import_changes_wii_mode_to_live(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("TV_GUIDE_XMLTV_PATH", str(xmltv))
     response = client.get("/api/v1/wii/guide.txt?region=us")
     assert response.status_code == 200
-    assert response.text.startswith("TVGUIDE|1|US-EN|America/New_York|LIVE")
+    assert response.text.startswith("TVGUIDE|1|US-EN|America/New_York|FEED")
     assert "CHANNEL|ny.abc|ABC New York" in response.text
     assert "Imported US Programme" in response.text
+
+
+def test_wii_guide_rejects_non_us_timezone() -> None:
+    response = client.get(
+        "/api/v1/wii/guide.txt",
+        params={"region": "us", "timezone": "Europe/London"},
+    )
+    assert response.status_code == 422
+
+
+def test_wii_guide_supports_us_pacific_timezone() -> None:
+    response = client.get(
+        "/api/v1/wii/guide.txt",
+        params={"region": "us", "timezone": "America/Los_Angeles"},
+    )
+    assert response.status_code == 200
+    assert response.text.startswith("TVGUIDE|1|US-EN|America/Los_Angeles|DEMO")
