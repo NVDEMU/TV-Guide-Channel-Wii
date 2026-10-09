@@ -278,6 +278,38 @@ internal static class Program
         }, new JsonSerializerOptions { WriteIndented = true }));
     }
 
+    private static void PatchImetTitlesPreservingArchive(WAD wad)
+    {
+        if (!wad.TmdContents.Any(item => item.Index == 0))
+            throw new InvalidDataException("The original title has no banner content at index 0.");
+
+        byte[] originalContent = wad.GetContentByIndex(0);
+        object header = wad.BannerApp.Header;
+        if (header is not Headers.IMET imet)
+            throw new InvalidDataException("The original banner does not contain an IMET header.");
+
+        imet.ChangeTitles(EnglishTitles);
+        using var headerStream = new MemoryStream();
+        imet.Write(headerStream);
+        byte[] headerBytes = headerStream.ToArray();
+        if (headerBytes.Length != 0x640 || originalContent.Length < headerBytes.Length)
+            throw new InvalidDataException(
+                $"Unexpected IMET header size {headerBytes.Length} or banner content size {originalContent.Length}.");
+
+        // Preserve the entire banner U8 archive byte-for-byte, replacing only the IMET
+        // metadata header that contains the eight localized Wii Menu names.
+        Buffer.BlockCopy(headerBytes, 0, originalContent, 0, headerBytes.Length);
+        int contentPosition = Array.FindIndex(wad.TmdContents, item => item.Index == 0);
+        ReplaceContent(wad, contentPosition, originalContent);
+    }
+
+    private static void DisableBannerArchiveReserialization(WAD wad)
+    {
+        FieldInfo field = typeof(WAD).GetField("hasBanner", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new MissingFieldException("Could not disable libWiiSharp banner archive reserialization.");
+        field.SetValue(wad, false);
+    }
+
     private static void ValidateSavedWad(string path, ulong expectedTitleId)
     {
         int[] repairedIndices;
