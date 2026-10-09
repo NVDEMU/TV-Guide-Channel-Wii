@@ -1,79 +1,118 @@
-# TV Guide Channel Wii
+# TV Guide USA for Wii
 
-An open-source revival project for the Japanese **TV no Tomo Channel: G-Guide for Wii**.
+**TV Guide USA** is a US-English Wii homebrew channel project inspired by the idea of Nintendo's Japanese TV no Tomo / G-Guide channel. It aims to offer a familiar programme-guide experience with US TV listings, channel navigation, programme details, and an installable Wii channel package.
 
-> **Current status: research and backend scaffold.** The repository now includes a working development API, a bounds-checked reader for the documented HDPK 001B EPG structure, and clearly marked synthetic demo listings. The parser has only been tested against synthetic fixtures—not an authentic channel file—and the service is **not yet compatible with the original Wii channel's network protocol**. Demo schedules are not real TV listings.
+> **Status: early, testable prototype.** The repository builds a new homebrew frontend; it does not patch or translate Nintendo's original proprietary channel executable. The Wii frontend can fetch this project's guide endpoint over a local network. When no XMLTV feed is configured it clearly labels the content as synthetic demo listings. Full internet-safe transport, polished banner/icon archives, Dolphin verification, and real-Wii testing are still required before calling this a finished public release.
 
-## Project plan
+## Project components
 
-1. Provide a local guide-data API that can be tested independently from a Wii.
-2. identify and document the original channel's requests, payload formats, region identifiers, and update flow.
-3. Add a licensed schedule-data importer for a verified source.
-4. Implement the adapter/serializer required by the original channel once its protocol is confirmed.
-5. Test in Dolphin, then on a Wii, before calling the revival functional.
+- `backend/` — FastAPI guide API, XMLTV ingestion, and a simple Wii-friendly text endpoint.
+- `wii/` — native PowerPC/libogc channel frontend, built as a Wii DOL.
+- `tests/` — API and parser tests.
+- `channel-assets/` — instructions for creating US-English Wii banner and icon U8 archives.
+- `tools/package-wad.sh` — local WAD packaging script using WadPakk and a compatible base WAD you are authorized to use.
+- `docs/PROTOCOL-RESEARCH.md` — research into TV no Tomo's original guide-file formats.
 
-## Current backend features
+## Features in this prototype
 
-- `GET /health` — health check.
-- `GET /api/v1/regions` — available guide regions (currently a demo region).
-- `GET /api/v1/channels?region=jp-demo` — synthetic demo channels.
-- `GET /api/v1/programmes?region=jp-demo&from=...&to=...` — synthetic programmes over an ISO-8601 time range.
-- `GET /api/v1/guide.xml?region=jp-demo` — XMLTV-formatted demo output for testing integrations.
-- A structural EPG package reader in `backend/hdpk.py` that checks offsets and reads channel/program records without claiming to decode the companion text package.
-- Input validation and automated tests for API responses, XMLTV output, and malformed synthetic EPG files.
-- Docker image for local/server deployment.
+- US-English channel UI: `TV GUIDE USA`.
+- Channel selection, programme listing, programme details, and refresh control.
+- US Eastern, Central, Mountain, and Pacific time-zone switching.
+- Backend supports user-provided XMLTV files for guide schedules.
+- Synthetic demo schedule when no source file is configured, clearly labelled `DEMO`.
+- Wii frontend can read its backend IPv4 address/port and default time zone from SD-card configuration.
+- GitHub Actions workflow builds the native Wii DOL and uploads it as an Actions artifact.
+- Local WAD package script uses title ID `TVG1` and channel title `TV Guide USA`.
 
-These endpoints are **our development API**, not claims about the endpoints or file formats expected by the original channel.
+## 1. Run the backend on a computer
 
-## Run locally
-
-Requires Python 3.11+.
+Requires Python 3.11 or newer.
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-uvicorn backend.main:app --reload
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for the interactive API documentation.
+Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for API documentation.
 
-Examples:
+Important endpoints:
+
+- `GET /health` — service status.
+- `GET /api/v1/regions` — configured guide regions.
+- `GET /api/v1/channels?region=us` — configured US guide channels.
+- `GET /api/v1/programmes?region=us` — programme data.
+- `GET /api/v1/guide.xml?region=us` — XMLTV export.
+- `GET /api/v1/wii/guide.txt?region=us&timezone=America/New_York` — Wii frontend text protocol.
+
+The Wii text protocol is custom to this project. It has **not** been confirmed as compatible with the original TV no Tomo channel's protocol.
+
+## 2. Add real US guide schedules
+
+This repository does not include a TV listings feed. Obtain an XMLTV file from a provider whose terms allow your intended use and redistribution/caching. Set the environment variable to that file before starting the API:
 
 ```sh
-curl http://127.0.0.1:8000/health
-curl 'http://127.0.0.1:8000/api/v1/regions'
-curl 'http://127.0.0.1:8000/api/v1/channels?region=jp-demo'
-curl 'http://127.0.0.1:8000/api/v1/guide.xml?region=jp-demo'
+TV_GUIDE_XMLTV_PATH="/absolute/path/to/us-guide.xml" \
+  uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-Run tests with:
+The importer reads English display names/titles where available, validates offset-aware XMLTV timestamps, and skips malformed programme entries. If the file is not configured or cannot be read, the API deliberately falls back to synthetic demo listings. Configure an automated feed refresh separately if you need schedules to stay up to date.
+
+## 3. Build the native Wii frontend
+
+Install devkitPro with the Wii development packages (`wii-dev` and the libogc/libfat libraries), then run:
+
+```sh
+make -C wii clean
+make -C wii
+```
+
+The build produces `wii/tv-guide-usa.dol` (and the ELF/map files). Every push and pull request also runs the Wii build workflow; open the repository's **Actions** tab to download the development build artifact.
+
+To let the frontend reach your backend, copy `wii/config.ini.example` to:
+
+```
+sd:/apps/tv-guide-channel-wii/config.ini
+```
+
+Change `server=` to the computer's LAN IPv4 address, for example `192.168.1.25`. The default port is `8000`. The channel currently uses **plain HTTP for local-network development only**; do not expose this endpoint directly to the public internet. HTTPS/TLS support is a requirement before a public hosted service is considered ready.
+
+Controls: D-pad Up/Down selects channels; Left/Right selects programmes; A opens programme details; 1 refreshes; Plus cycles US time zones; HOME returns to the Wii Menu.
+
+## 4. Package a WAD
+
+A DOL executable is not by itself an installable Wii Menu channel. To create a WAD, you also need valid Wii channel metadata/banner content. This repo deliberately does not store Nintendo channel binaries, Wii common keys, tickets, NAND backups, or a base WAD.
+
+See [docs/WAD-BUILD.md](docs/WAD-BUILD.md) and [channel-assets/README.md](channel-assets/README.md). The packaging script needs:
+
+- A built `wii/tv-guide-usa.dol`.
+- A compatible base WAD you are authorized to use.
+- `channel-assets/banner.bin` and `channel-assets/icon.bin`, valid U8 banner/icon archives exported from a Wii channel banner editor.
+- The .NET 8 SDK and network access to clone the open-source WadPakk build tool.
+
+Example:
+
+```sh
+TV_GUIDE_BASE_WAD="$HOME/Wii/my-base.wad" \
+  bash tools/package-wad.sh
+```
+
+Override the banner/icon paths with `TV_GUIDE_BANNER_BIN` and `TV_GUIDE_ICON_BIN` if necessary. The output is `build/TV-Guide-USA.wad`. The base WAD and exported binary assets remain local/ignored rather than being committed. The workflow does not publish a WAD automatically because these inputs are user-owned/local and have not been supplied to CI.
+
+**Safety:** first test the DOL in Dolphin or via Homebrew Channel, then test the WAD in Dolphin. Installing malformed WADs can brick a Wii. Keep a verified NAND backup and brick-protection setup before installing a WAD on physical hardware. A successful compile is not proof of real-console functionality.
+
+## 5. Tests
 
 ```sh
 python -m pytest -q
+python -m compileall -q backend tests
 ```
-
-## Docker
-
-```sh
-docker build -t tv-guide-channel-wii .
-docker run --rm -p 8000:8000 tv-guide-channel-wii
-```
-
-## Data and licensing
-
-The sample schedule is generated dynamically and explicitly labeled as demo content. It must not be presented as a real broadcast schedule. Before adding real listings, confirm the data source permits retrieval, transformation, and redistribution. See [data/README.md](data/README.md).
 
 ## Protocol research
 
-See [docs/PROTOCOL-RESEARCH.md](docs/PROTOCOL-RESEARCH.md). Existing community research worth reviewing includes:
+See [docs/PROTOCOL-RESEARCH.md](docs/PROTOCOL-RESEARCH.md). Useful existing format references include [WiiLink24/tv-epg](https://github.com/WiiLink24/tv-epg), [WiiLink24/kaitais](https://github.com/WiiLink24/kaitais), and [Wii-Kaitai's Terebi no Tomo definitions](https://github.com/quatric/Wii-Kaitai/tree/main/channels/terebi_no_tomo).
 
-- [WiiLink24/tv-epg](https://github.com/WiiLink24/tv-epg) — guide-data acquisition utilities.
-- [WiiLink24/kaitais](https://github.com/WiiLink24/kaitais) — includes a Kaitai definition for the Terebi no Tomo `header.bin`.
-- [Wii-Kaitai](https://github.com/quatric/Wii-Kaitai) — consolidated Wii file-format definitions, including Terebi no Tomo formats.
+## Scope and naming
 
-Those projects are references, not evidence that this repository already implements the original channel's protocol.
-
-## Scope
-
-The goal is to restore the original channel experience where technically practical, without distributing proprietary channel binaries or claiming that an unverified protocol works. Keep test captures free of passwords, device identifiers, personal information, and other secrets.
+The project is an independent US-English homebrew implementation, not an officially licensed Nintendo product. It uses the original channel as historical inspiration, while building a new frontend and backend rather than redistributing the original executable or banner art.
