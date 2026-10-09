@@ -1,0 +1,335 @@
+{
+  "schema_version": 1,
+  "purpose": "Candidate television schedule sources for TV Guide USA. Format compatibility and legal permissions are tracked separately.",
+  "default_build_source": "tvmaze-us",
+  "sources": [
+    {
+      "id": "tvmaze-us",
+      "name": "TVmaze US broadcast schedule API",
+      "format": "json-api",
+      "url_template": "https://api.tvmaze.com/schedule?country=US&date={date}",
+      "coverage": "US broadcast/network episode schedules; not a complete per-affiliate grid",
+      "license": "CC BY-SA; attribution and ShareAlike apply",
+      "redistribution_status": "documented-license",
+      "default_build": true,
+      "notes": "Used to create the small, attributed guide snapshot embedded in public development builds. API is rate limited and best-effort."
+    },
+    {
+      "id": "us-epg-merged",
+      "name": "US-EPG merged guide",
+      "format": "xmltv-gzip",
+      "url": "https://vcicio.github.io/US-EPG/merged_epg.xml.gz",
+      "coverage": "US national, local and sports channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false,
+      "notes": "Community-maintained aggregation of multiple sources; source freshness and channel lineup vary."
+    },
+    {
+      "id": "us-epg-new-york",
+      "name": "iptv-org TVTV New York guide",
+      "format": "xmltv",
+      "url": "https://iptv-org.github.io/epg/guides/us-ny/tvtv.us.epg.xml",
+      "coverage": "New York state and market channel listings",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false,
+      "notes": "Community-generated listings and provider scraping; availability and channel-ID matching can change."
+    },
+    {
+      "id": "iptv-org-us-tvguide",
+      "name": "iptv-org TV Guide US source",
+      "format": "xmltv",
+      "url": "https://iptv-org.github.io/epg/guides/us/tvguide.com.epg.xml",
+      "coverage": "Selected US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false,
+      "notes": "Check that channel IDs are populated and schedules remain fresh before using."
+    },
+    {
+      "id": "iptv-org-us-tvtv",
+      "name": "iptv-org TVTV US source",
+      "format": "xmltv",
+      "url": "https://iptv-org.github.io/epg/guides/us/tvtv.us.epg.xml",
+      "coverage": "US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false,
+      "notes": "Check data terms and the provider's channel IDs before redistribution."
+    },
+    {
+      "id": "epgtalk-us",
+      "name": "EPGTalk US guide",
+      "format": "xmltv-gzip",
+      "url": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_guide.xml.gz",
+      "coverage": "US national lineup",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false,
+      "notes": "Public community feed; verify the repository's current terms before publishing derived listings."
+    },
+    {
+      "id": "epgtalk-us-local",
+      "name": "EPGTalk US local guide",
+      "format": "xmltv-gzip",
+      "url": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_local_guide.xml.gz",
+      "coverage": "Local stations across 140+ US markets as reported by the project",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "epgtalk-sports",
+      "name": "EPGTalk sports guide",
+      "format": "xmltv-gzip",
+      "url": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/Sports_guide.xml.gz",
+      "coverage": "Sports schedules",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "epgtalk-free-tv",
+      "name": "EPGTalk Free TV guide",
+      "format": "xmltv-gzip",
+      "url": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/FreeTV_guide.xml.gz",
+      "coverage": "Free streaming channels including Pluto TV, Samsung TV Plus, Plex and Tubi as listed by the project",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "epgtalk-us-lite",
+      "name": "EPGTalk US Lite guide",
+      "format": "xmltv-gzip",
+      "url": "https://raw.githubusercontent.com/acidjesuz/EPGTalk/master/US_lite.xml.gz",
+      "coverage": "Reduced-size US guide",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "epgshare-us-national",
+      "name": "EPGShare US national",
+      "format": "xmltv-gzip",
+      "url": "https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz",
+      "coverage": "National channels and sports/news networks",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "epgshare-us-locals",
+      "name": "EPGShare US locals",
+      "format": "xmltv-gzip",
+      "url": "https://epgshare01.online/epgshare01/epg_ripper_US_LOCALS1.xml.gz",
+      "coverage": "Local ABC, CBS, FOX and NBC affiliates",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "epgshare-us-sports",
+      "name": "EPGShare US sports",
+      "format": "xmltv-gzip",
+      "url": "https://epgshare01.online/epgshare01/epg_ripper_US_SPORTS1.xml.gz",
+      "coverage": "US sports channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "usa-locals",
+      "name": "USA Locals",
+      "format": "xmltv-gzip",
+      "url": "https://raw.githubusercontent.com/usa-local-epg/usa-locals/main/usalocals.xml.gz",
+      "coverage": "US ABC, CBS, FOX and NBC affiliates",
+      "license": "Repository says free for personal use; confirm before any redistribution",
+      "redistribution_status": "personal-use-only-unless-confirmed",
+      "default_build": false
+    },
+    {
+      "id": "epgpw-us",
+      "name": "epg.pw US guide",
+      "format": "xmltv-gzip",
+      "url": "https://epg.pw/xmltv/epg_US.xml.gz",
+      "coverage": "Large US guide with local and national entries",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "iptv-epg-org-us",
+      "name": "IPTV-EPG.org US feed",
+      "format": "xmltv-gzip",
+      "url": "https://iptv-epg.org/files/epg-us.xml.gz",
+      "coverage": "Large US channel catalog",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false,
+      "notes": "Large feed; filter by channel before using on the Wii."
+    },
+    {
+      "id": "open-epg-us-1",
+      "name": "Open-EPG US file 1",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates1.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-2",
+      "name": "Open-EPG US file 2",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates2.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-3",
+      "name": "Open-EPG US file 3",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates3.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-4",
+      "name": "Open-EPG US file 4",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates4.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-5",
+      "name": "Open-EPG US file 5",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates5.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-6",
+      "name": "Open-EPG US file 6",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates6.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-7",
+      "name": "Open-EPG US file 7",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates7.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-8",
+      "name": "Open-EPG US file 8",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates8.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-9",
+      "name": "Open-EPG US file 9",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates9.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-10",
+      "name": "Open-EPG US file 10",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates10.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "open-epg-us-11",
+      "name": "Open-EPG US file 11",
+      "format": "xmltv-gzip",
+      "url": "https://www.open-epg.com/files/unitedstates11.xml.gz",
+      "coverage": "Subset of US channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "pluto-tv-us",
+      "name": "Pluto TV US listings",
+      "format": "xmltv-gzip",
+      "url": "https://i.mjh.nz/PlutoTV/us.xml.gz",
+      "coverage": "Pluto TV channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "samsung-tv-plus-us",
+      "name": "Samsung TV Plus US listings",
+      "format": "xmltv-gzip",
+      "url": "https://i.mjh.nz/SamsungTVPlus/us.xml.gz",
+      "coverage": "Samsung TV Plus channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "plex-us",
+      "name": "Plex US listings",
+      "format": "xmltv-gzip",
+      "url": "https://i.mjh.nz/Plex/us.xml.gz",
+      "coverage": "Plex free live-TV channels",
+      "redistribution_status": "verify-upstream-terms",
+      "default_build": false
+    },
+    {
+      "id": "schedules-direct",
+      "name": "Schedules Direct JSON/XMLTV",
+      "format": "account-api",
+      "url": "https://json.schedulesdirect.org/20141201/",
+      "coverage": "US and Canadian listings selected by a configured lineup",
+      "license": "Member access for supported open-source applications; 7-day trial and paid membership listed by provider",
+      "redistribution_status": "account-and-terms-required",
+      "default_build": false,
+      "notes": "Use XMLTV Project tv_grab_zz_sdjson or tv_grab_zz_sdjson_sqlite. Do not publish member data without permission."
+    },
+    {
+      "id": "xmltv-na-dd",
+      "name": "XMLTV North America DataDirect grabber",
+      "format": "grabber",
+      "url": "https://github.com/XMLTV/xmltv",
+      "coverage": "Legacy US/Canada DataDirect workflow",
+      "redistribution_status": "source-account-and-terms-required",
+      "default_build": false,
+      "notes": "Check provider availability before choosing this legacy grabber."
+    },
+    {
+      "id": "iptv-org-guides",
+      "name": "iptv-org EPG source catalog",
+      "format": "source-catalog",
+      "url": "https://github.com/iptv-org/epg",
+      "coverage": "Hundreds of provider sites; includes US guides from tvtv.us, tvguide.com and other sources",
+      "redistribution_status": "verify-each-data-source-terms",
+      "default_build": false,
+      "notes": "The software repository license does not automatically license the third-party schedule data."
+    },
+    {
+      "id": "tvmedia-enterprise",
+      "name": "TV Media listings data",
+      "format": "commercial-api",
+      "url": "https://www.tvmedia.ca/",
+      "coverage": "Commercially licensed television listings and metadata",
+      "redistribution_status": "commercial-contract-required",
+      "default_build": false
+    },
+    {
+      "id": "gracenote-enterprise",
+      "name": "Gracenote / TiVo TV listings data",
+      "format": "commercial-api",
+      "url": "https://www.gracenote.com/",
+      "coverage": "Commercial listings, program metadata and guide data",
+      "redistribution_status": "commercial-contract-required",
+      "default_build": false
+    }
+  ]
+}
