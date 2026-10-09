@@ -105,8 +105,8 @@
   "Remocon.bmg:6": "Setup is complete.\\nSome TV models may not support every remote function. See the channel manual for details.",
   "Remocon.bmg:7": "[Maker] #00\\n[Broadcast] #01\\n\\nIs the TV programme visible?\\nPress 1 for Yes or 2 for No.",
   "Remocon.bmg:8": "[Maker] #00\\n[Broadcast] #01\\n\\nIs this screen visible?\\nPress 1 for Yes or 2 for No.",
-  "Remocon.bmg:9": "Could not switch to the TV broadcast.\\nThis television may not be supported.\\nReturning to the guide.",
-  "Remocon.bmg:10": "Could not switch back to the Wii screen.\\nThis television may not be supported.",
+  "Remocon.bmg:9": "[Maker] #00\\n[Broadcast] #01\\nCould not switch to the TV broadcast.\\nThis television may not be supported.\\nReturning to the guide.",
+  "Remocon.bmg:10": "[Maker] #00\\n[Broadcast] #01\\nCould not switch back to the Wii screen.\\nThis television may not be supported.",
   "Remocon.bmg:11": "Error",
   "Remocon.bmg:12": "3. Register the Wii Input",
   "Remocon.bmg:13": "Register the input to which the Wii is connected.\\nPress Start to switch to TV broadcast.",
@@ -180,6 +180,6 @@
   "Remocon.bmg:88": "Analog Terrestrial compatible",
   "Support.bmg:0": "(1/3) Using TV Guide USA\\nPress HOME on the Wii Remote to view the channel manual.\\n\\nAbout programme popularity\\nPopularity statistics are aggregated from guide users.",
   "Support.bmg:1": "(2/3) Programme changes\\nBroadcasts may change without notice.\\n\\nPast schedules are not provided by this channel.",
-  "Support.bmg:2": "(3/3) Support\\nFor service information, consult the TV Guide USA project page.",
+  "Support.bmg:2": "(3/3) Support\\nFor general service inquiries, see: #00",
   "Support.bmg:10": "Support"
 }
