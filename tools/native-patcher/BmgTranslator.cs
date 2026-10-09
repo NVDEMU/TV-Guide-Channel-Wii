@@ -14,19 +14,19 @@ internal static class BmgTranslator
         if (source.Length < 0x40 || !source.AsSpan(0, 8).SequenceEqual("MESGbmg1"u8))
             return source;
 
-        int totalSize = ReadU32(source, 8);
+        int totalSize = checked((int)ReadU32(source, 8));
         if (totalSize > source.Length || totalSize < 0x30)
             throw new InvalidDataException($"{fileName}: BMG file size is invalid.");
 
         int infOffset = FindSection(source, "INF1");
-        int infSize = ReadU32(source, infOffset + 4);
+        int infSize = checked((int)ReadU32(source, infOffset + 4));
         int messageCount = ReadU16(source, infOffset + 8);
         int entrySize = ReadU16(source, infOffset + 10);
         if (entrySize != 4 || infSize < 16 + messageCount * entrySize)
             throw new InvalidDataException($"{fileName}: unsupported BMG INF1 table.");
 
         int datOffset = FindSection(source, "DAT1");
-        int datSize = ReadU32(source, datOffset + 4);
+        int datSize = checked((int)ReadU32(source, datOffset + 4));
         int datPayload = datOffset + 8;
         if (datSize < 8 || datOffset + datSize > totalSize)
             throw new InvalidDataException($"{fileName}: invalid BMG DAT1 section.");
@@ -92,7 +92,7 @@ internal static class BmgTranslator
 
     private static int FindSection(byte[] source, string name)
     {
-        int limit = Math.Min(ReadU32(source, 8), source.Length);
+        int limit = checked((int)Math.Min(ReadU32(source, 8), (uint)source.Length));
         for (int i = 0x20; i + 8 <= limit; i += 4)
         {
             if (source.AsSpan(i, 4).SequenceEqual(Encoding.ASCII.GetBytes(name))) return i;
