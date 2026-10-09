@@ -1,4 +1,6 @@
-# devkitPPC/libogc Makefile for TV Guide USA.
+#---------------------------------------------------------------------------------
+# Clear implicit built-in rules.
+#---------------------------------------------------------------------------------
 .SUFFIXES:
 ifeq ($(strip $(DEVKITPPC)),)
 $(error "Please set DEVKITPPC in your environment. Install devkitPro's wii-dev package.")
@@ -9,12 +11,60 @@ include $(DEVKITPPC)/wii_rules
 TARGET := tv-guide-usa
 BUILD := build
 SOURCES := source
+DATA := data
 INCLUDES :=
-DATA :=
-LIBS := -lfat
 
-.PHONY: all clean
-all: $(TARGET).dol
+# Warning-clean production-like build; CI passes EXTRA_CFLAGS=-Werror.
+CFLAGS := -g -O2 -Wall $(MACHDEP) $(INCLUDE) $(EXTRA_CFLAGS)
+CXXFLAGS := $(CFLAGS)
+LDFLAGS := -g $(MACHDEP) -Wl,-Map,$(notdir $@).map
+
+LIBS := -lwiiuse -lbte -lfat -logc -lm
+LIBDIRS :=
+
+ifneq ($(BUILD),$(notdir $(CURDIR)))
+
+export OUTPUT := $(CURDIR)/$(TARGET)
+export VPATH := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) $(foreach dir,$(DATA),$(CURDIR)/$(dir))
+export DEPSDIR := $(CURDIR)/$(BUILD)
+CFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
+CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+sFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+SFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
+BINFILES := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+
+ifeq ($(strip $(CPPFILES)),)
+export LD := $(CC)
+else
+export LD := $(CXX)
+endif
+
+export OFILES := $(addsuffix .o,$(BINFILES)) $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(sFILES:.s=.o) $(SFILES:.S=.o)
+export INCLUDE := $(foreach dir,$(INCLUDES),-iquote $(CURDIR)/$(dir)) $(foreach dir,$(LIBDIRS),-I$(dir)/include) -I$(CURDIR)/$(BUILD) -I$(LIBOGC_INC)
+export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib) -L$(LIBOGC_LIB)
+export OUTPUT := $(CURDIR)/$(TARGET)
+
+.PHONY: all clean run $(BUILD)
+all: $(BUILD)
+
+$(BUILD):
+	@[ -d $@ ] || mkdir -p $@
+	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 clean:
-	$(RM) -r $(BUILD) $(TARGET).dol $(TARGET).elf
+	@echo clean ...
+	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).dol $(OUTPUT).map
+
+run:
+	wiiload $(TARGET).dol
+
+else
+
+DEPENDS := $(OFILES:.o=.d)
+
+$(OUTPUT).dol: $(OUTPUT).elf
+$(OUTPUT).elf: $(OFILES)
+
+-include $(DEPENDS)
+
+endif
