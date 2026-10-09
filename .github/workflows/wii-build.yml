@@ -73,3 +73,41 @@ jobs:
             dist/tv-guide-usa.dol
             dist/tv-guide-usa.elf
             dist/tv-guide-usa.map
+
+  wad-tools-check:
+    name: Validate local WAD packaging tools
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Test Python tooling and shell syntax
+        run: |
+          python -m pip install -r requirements.txt
+          python -m compileall -q backend tests tools
+          python -m pytest -q
+          bash -n tools/package-wad.sh
+          python tools/inspect_wad.py --help
+          python tools/prepare-wad-tool.py --help
+
+      - name: Fetch the local WAD packager source
+        run: |
+          mkdir -p .tools
+          git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
+          python tools/prepare-wad-tool.py .tools/WadPakk
+
+      - name: Build portable WAD packager and asset extractor
+        run: |
+          dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release
+          dotnet build tools/wad-assets/WadAssetExtractor.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
