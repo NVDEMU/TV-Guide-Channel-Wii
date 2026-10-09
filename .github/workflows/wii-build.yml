@@ -4,20 +4,65 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      package_wad:
+        description: "Also build an installable WAD (requires TV_GUIDE_BASE_WAD_URL repository secret)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  build-guide-snapshot:
+    name: Fetch attributed TV guide snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python for the build tools
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Fetch TVmaze schedules and generate four timezone snapshots
+        run: python tools/build_tvmaze_guide.py
+
+      - name: Upload the generated C data used by the DOL build
+        uses: actions/upload-artifact@v6
+        with:
+          name: tv-guide-usa-embedded-source-${{ github.sha }}
+          if-no-files-found: error
+          path: wii/source/embedded_guide_data.inc
+
+      - name: Upload user-visible timezone files and source status
+        uses: actions/upload-artifact@v6
+        with:
+          name: tv-guide-usa-guide-files-${{ github.sha }}
+          if-no-files-found: error
+          path: build/guide/*
+
   build-wii:
     name: Build TV Guide USA DOL
     runs-on: ubuntu-latest
     container: devkitpro/devkitppc:latest
     timeout-minutes: 15
+    needs: build-guide-snapshot
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+
+      - name: Download generated guide snapshot
+        uses: actions/download-artifact@v6
+        with:
+          name: tv-guide-usa-embedded-source-${{ github.sha }}
+          path: wii/source
 
       - name: Verify Wii SDK libraries
         run: |
@@ -45,9 +90,9 @@ jobs:
             wii/tv-guide-usa.map
 
   publish-nightly:
-    name: Publish TV Guide USA Nightly DOL
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build-wii
+    name: Publish TV Guide USA Nightly DOL and guide files
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
+    needs: [build-wii, build-guide-snapshot]
     runs-on: ubuntu-latest
     steps:
       - name: Download build output
@@ -55,6 +100,12 @@ jobs:
         with:
           name: tv-guide-usa-wii-${{ github.sha }}
           path: dist
+
+      - name: Download guide snapshots
+        uses: actions/download-artifact@v6
+        with:
+          name: tv-guide-usa-guide-files-${{ github.sha }}
+          path: dist/guide-files
 
       - name: Publish or update nightly release
         uses: softprops/action-gh-release@v2
@@ -64,7 +115,9 @@ jobs:
           body: |
             Automated US-English Wii homebrew frontend build from the latest main commit.
 
-            This release contains the DOL executable for testing. It is not a WAD. WAD packaging uses a local base WAD; the script extracts existing banner/icon U8 archives as a fallback, while custom US-English art is optional. See docs/WAD-BUILD.md. Test in Dolphin before attempting to install anything on a real Wii.
+            The DOL includes a compact TVmaze US schedule snapshot, with TVmaze attribution/CC BY-SA requirements shown in the UI. The separate timezone guide files can also be placed on an emulated SD card for testing. TVmaze is episode-centric and is not a full local-affiliate grid.
+
+            The release includes DOL/ELF/map, the four timezone guide text files, and source-status metadata. It is not an installable WAD. Manual WAD packaging is available from Actions -> Wii Channel Build -> Run workflow; set the TV_GUIDE_BASE_WAD_URL repository secret and enable package_wad. See docs/WAD-BUILD.md and docs/GUIDE-SOURCES.md. Test in Dolphin before attempting real hardware.
           prerelease: true
           make_latest: false
           overwrite_files: true
@@ -73,9 +126,95 @@ jobs:
             dist/tv-guide-usa.dol
             dist/tv-guide-usa.elf
             dist/tv-guide-usa.map
+            dist/guide-files/guide-eastern.txt
+            dist/guide-files/guide-central.txt
+            dist/guide-files/guide-mountain.txt
+            dist/guide-files/guide-pacific.txt
+            dist/guide-files/source-status.json
+
+  package-installable-wad:
+    name: Build installable WAD and Dolphin test kit
+    if: github.event_name == 'workflow_dispatch' && inputs.package_wad
+    needs: [build-wii, build-guide-snapshot]
+    runs-on: macos-latest
+    timeout-minutes: 25
+    env:
+      TV_GUIDE_BASE_WAD_URL: ${{ secrets.TV_GUIDE_BASE_WAD_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Download built DOL
+        uses: actions/download-artifact@v6
+        with:
+          name: tv-guide-usa-wii-${{ github.sha }}
+          path: dist
+
+      - name: Download guide snapshots
+        uses: actions/download-artifact@v6
+        with:
+          name: tv-guide-usa-guide-files-${{ github.sha }}
+          path: build/guide
+
+      - name: Download and validate your base WAD
+        run: |
+          if [[ -z "${TV_GUIDE_BASE_WAD_URL:-}" ]]; then
+            echo "::error::Set the TV_GUIDE_BASE_WAD_URL repository Actions secret to a direct, temporarily valid download URL for your own base WAD."
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --retry 2 --max-time 180 \
+            --max-filesize 200000000 "$TV_GUIDE_BASE_WAD_URL" \
+            --output "$RUNNER_TEMP/TV-no-Tomo-base.wad"
+          test -s "$RUNNER_TEMP/TV-no-Tomo-base.wad"
+          python tools/inspect_wad.py "$RUNNER_TEMP/TV-no-Tomo-base.wad"
+
+      - name: Prepare and build the WAD packager
+        run: |
+          mkdir -p .tools
+          git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
+          python tools/prepare_wad_tool.py .tools/WadPakk
+          dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release
+          dotnet build tools/wad-assets/WadAssetExtractor.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
+
+      - name: Package the WAD
+        env:
+          TV_GUIDE_DOL: ${{ github.workspace }}/dist/tv-guide-usa.dol
+          TV_GUIDE_BASE_WAD: ${{ runner.temp }}/TV-no-Tomo-base.wad
+          TV_GUIDE_WAD_OUTPUT: ${{ github.workspace }}/build/TV-Guide-USA.wad
+          WADPAKK_DIR: ${{ github.workspace }}/.tools/WadPakk
+        run: bash tools/package-wad.sh
+
+      - name: Assemble Dolphin test kit
+        run: |
+          mkdir -p build/TV-Guide-USA-Dolphin-Test-Kit/sd/apps/tv-guide-channel-wii
+          cp dist/tv-guide-usa.dol build/TV-Guide-USA-Dolphin-Test-Kit/sd/apps/tv-guide-channel-wii/boot.dol
+          cp build/guide/guide-*.txt build/TV-Guide-USA-Dolphin-Test-Kit/sd/apps/tv-guide-channel-wii/
+          cp wii/config.ini.example build/TV-Guide-USA-Dolphin-Test-Kit/sd/apps/tv-guide-channel-wii/config.ini.example
+          cp build/TV-Guide-USA.wad build/TV-Guide-USA-Dolphin-Test-Kit/
+          cp build/guide/source-status.json build/TV-Guide-USA-Dolphin-Test-Kit/
+          cd build && zip -qr TV-Guide-USA-Dolphin-Test-Kit.zip TV-Guide-USA-Dolphin-Test-Kit
+
+      - name: Upload installable WAD and Dolphin test kit
+        uses: actions/upload-artifact@v6
+        with:
+          name: tv-guide-usa-wad-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            build/TV-Guide-USA.wad
+            build/TV-Guide-USA-Dolphin-Test-Kit.zip
 
   wad-tools-check:
-    name: Validate local WAD packaging tools
+    name: Validate guide and WAD packaging tools
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -97,6 +236,8 @@ jobs:
           python -m pip install -r requirements.txt
           python -m compileall -q backend tests tools
           python -m pytest -q
+          python tools/build_tvmaze_guide.py --offline-demo --output-dir "$RUNNER_TEMP/guide-test" --c-output "$RUNNER_TEMP/guide-test/embedded_guide_data.inc"
+          grep -q 'TVGUIDE|1|US-EN|America/New_York|DEMO' "$RUNNER_TEMP/guide-test/guide-eastern.txt"
           bash -n tools/package-wad.sh
           python tools/inspect_wad.py --help
           python tools/prepare_wad_tool.py --help
