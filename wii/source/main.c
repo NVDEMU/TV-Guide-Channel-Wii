@@ -24,7 +24,7 @@
 
 #define MAX_CHANNELS 16
 #define MAX_PROGRAMMES 64
-#define RESPONSE_SIZE 16384
+#define RESPONSE_SIZE 32768
 #define CONFIG_PATH "sd:/apps/tv-guide-channel-wii/config.ini"
 #define DEFAULT_SERVER "192.168.1.2"
 #define DEFAULT_PORT 8000
@@ -149,8 +149,8 @@ static bool parse_guide_body(char *body) {
             (void)next_field(&field_save); /* locale */
             (void)next_field(&field_save); /* timezone */
             char *mode = next_field(&field_save);
-            if (mode && strcmp(mode, "LIVE") == 0) {
-                copy_text(guide.mode, sizeof(guide.mode), "LIVE");
+            if (mode && (strcmp(mode, "FEED") == 0 || strcmp(mode, "LIVE") == 0)) {
+                copy_text(guide.mode, sizeof(guide.mode), mode);
             }
         } else if (strcmp(kind, "CHANNEL") == 0 &&
                    guide.channel_count < MAX_CHANNELS) {
@@ -233,7 +233,7 @@ static bool fetch_guide(void) {
         return false;
     }
 
-    char response[RESPONSE_SIZE];
+    static char response[RESPONSE_SIZE];
     size_t total = 0;
     while (total + 1 < sizeof(response)) {
         int received = recv(socket_fd, response + total,
@@ -353,7 +353,8 @@ static void draw_screen(void) {
             int pindex = programme_index_for_channel(selected_channel, row);
             if (pindex >= 0) {
                 GuideProgramme *p = &guide.programmes[pindex];
-                printf(" %s - %s  %-28.28s",
+                printf("%s %s - %s  %-28.28s",
+                       row == selected_programme ? ">" : " ",
                        p->start, p->end, p->title);
             } else if (row == 0) {
                 printf(" No programme data for this channel yet.");
