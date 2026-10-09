@@ -309,8 +309,14 @@ internal static class Program
                     .Distinct()
                     .OrderBy(index => index)
                     .ToArray();
+                int[] sourcePlaceholders = System.Text.RegularExpressions.Regex.Matches(message.Text, @"#(\d{2})")
+                    .Cast<System.Text.RegularExpressions.Match>()
+                    .Select(match => int.Parse(match.Groups[1].Value))
+                    .Distinct()
+                    .OrderBy(index => index)
+                    .ToArray();
                 bool placeholderSafe = message.ControlTagCount == 0
-                    ? placeholders.Length == 0
+                    ? placeholders.SequenceEqual(sourcePlaceholders)
                     : placeholders.SequenceEqual(Enumerable.Range(0, message.ControlTagCount));
                 candidates.Add(new
                 {
