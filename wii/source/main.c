@@ -10,6 +10,7 @@
 #include <ogc/if_config.h>
 #include <wiiuse/wpad.h>
 #include <fat.h>
+#include "embedded_guide.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -54,6 +55,9 @@ typedef struct {
 } GuideState;
 
 static GuideState guide;
+static char response_buffer[RESPONSE_SIZE];
+static bool server_configured;
+static bool fat_ready;
 static void *framebuffer;
 static GXRModeObj *video_mode;
 static int selected_channel;
@@ -103,6 +107,7 @@ static void load_configuration(void) {
     if (!fatInitDefault()) {
         return;
     }
+    fat_ready = true;
 
     FILE *file = fopen(CONFIG_PATH, "r");
     if (!file) return;
@@ -113,6 +118,7 @@ static void load_configuration(void) {
         if (newline) *newline = '\0';
         if (strncmp(line, "server=", 7) == 0 && line[7] != '\0') {
             copy_text(guide.server, sizeof(guide.server), line + 7);
+            server_configured = strcmp(guide.server, DEFAULT_SERVER) != 0;
         } else if (strncmp(line, "port=", 5) == 0) {
             int port = atoi(line + 5);
             if (port > 0 && port <= 65535) guide.port = port;
@@ -154,7 +160,8 @@ static bool parse_guide_body(char *body) {
             (void)next_field(&field_save); /* locale */
             (void)next_field(&field_save); /* timezone */
             char *mode = next_field(&field_save);
-            if (mode && (strcmp(mode, "FEED") == 0 || strcmp(mode, "LIVE") == 0)) {
+            if (mode && (strcmp(mode, "FEED") == 0 || strcmp(mode, "LIVE") == 0 ||
+                         strcmp(mode, "TVMAZE") == 0)) {
                 copy_text(guide.mode, sizeof(guide.mode), mode);
             }
         } else if (strcmp(kind, "CHANNEL") == 0 &&
@@ -238,11 +245,10 @@ static bool fetch_guide(void) {
         return false;
     }
 
-    static char response[RESPONSE_SIZE];
     size_t total = 0;
-    while (total + 1 < sizeof(response)) {
-        int received = recv(socket_fd, response + total,
-                            sizeof(response) - total - 1, 0);
+    while (total + 1 < sizeof(response_buffer)) {
+        int received = recv(socket_fd, response_buffer + total,
+                            sizeof(response_buffer) - total - 1, 0);
         if (received == 0) break;
         if (received < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) break;
@@ -253,10 +259,10 @@ static bool fetch_guide(void) {
         total += (size_t)received;
     }
     close(socket_fd);
-    response[total] = '\0';
+    response_buffer[total] = '\0';
 
-    char *headers_end = strstr(response, "\r\n\r\n");
-    if (!headers_end || !strstr(response, "200 OK")) {
+    char *headers_end = strstr(response_buffer, "\r\n\r\n");
+    if (!headers_end || !strstr(response_buffer, "200 OK")) {
         printf("Guide server did not return HTTP 200.\n");
         return false;
     }
@@ -267,6 +273,53 @@ static bool fetch_guide(void) {
     }
     printf("Guide loaded from server (%s).\n", guide.mode);
     return true;
+}
+
+static const char *sd_guide_path(void) {
+    if (strcmp(guide.timezone, "America/Chicago") == 0) {
+        return "sd:/apps/tv-guide-channel-wii/guide-central.txt";
+    }
+    if (strcmp(guide.timezone, "America/Denver") == 0) {
+        return "sd:/apps/tv-guide-channel-wii/guide-mountain.txt";
+    }
+    if (strcmp(guide.timezone, "America/Los_Angeles") == 0) {
+        return "sd:/apps/tv-guide-channel-wii/guide-pacific.txt";
+    }
+    return "sd:/apps/tv-guide-channel-wii/guide-eastern.txt";
+}
+
+static bool load_sd_guide(void) {
+    if (!fat_ready) fat_ready = fatInitDefault();
+    if (!fat_ready) return false;
+
+    FILE *file = fopen(sd_guide_path(), "rb");
+    if (!file) return false;
+    size_t total = fread(response_buffer, 1, sizeof(response_buffer) - 1, file);
+    bool too_large = !feof(file);
+    bool read_error = ferror(file) != 0;
+    fclose(file);
+    if (too_large || read_error || total == 0) return false;
+    response_buffer[total] = '\0';
+    if (!parse_guide_body(response_buffer)) return false;
+    printf("Guide loaded from SD card (%s).\n", guide.mode);
+    return true;
+}
+
+static bool load_embedded_guide(void) {
+    const char *payload = embedded_guide_text(guide.timezone);
+    if (!payload || payload[0] == '\0') return false;
+    copy_text(response_buffer, sizeof(response_buffer), payload);
+    if (!parse_guide_body(response_buffer)) return false;
+    printf("Loaded built-in guide snapshot (%s).\n", guide.mode);
+    return true;
+}
+
+static bool reload_guide(void) {
+    if (server_configured && fetch_guide()) return true;
+    if (load_sd_guide()) return true;
+    if (load_embedded_guide()) return true;
+    if (!server_configured && fetch_guide()) return true;
+    return false;
 }
 
 static void add_demo_channel(const char *id, const char *name,
@@ -384,7 +437,9 @@ static void draw_screen(void) {
     printf(" UP/DOWN: Channel   LEFT/RIGHT: Programme   A: Details\n");
     printf(" 1: Refresh guide   PLUS: Cycle US time zone   B: Back\n");
     printf(" HOME: Return to Wii Menu\n");
-    if (strcmp(guide.mode, "DEMO") == 0) {
+    if (strcmp(guide.mode, "TVMAZE") == 0) {
+        printf(" Schedule data: TVmaze (CC BY-SA).\n");
+    } else if (strcmp(guide.mode, "DEMO") == 0) {
         printf(" DEMO MODE: sample data only; not real television listings.\n");
     }
 }
@@ -400,7 +455,7 @@ int main(int argc, char **argv) {
     printf("A US-English Wii TV guide homebrew channel.\n");
     printf("Loading guide data...\n");
 
-    if (!fetch_guide()) {
+    if (!reload_guide()) {
         load_demo_guide();
     }
 
@@ -452,7 +507,7 @@ int main(int argc, char **argv) {
         }
         if (buttons & WPAD_BUTTON_1) {
             printf("\x1b[2J\x1b[HRefreshing guide...\n");
-            if (!fetch_guide()) load_demo_guide();
+            if (!reload_guide()) load_demo_guide();
             selected_channel = 0;
             selected_programme = 0;
             show_details = false;
@@ -466,7 +521,7 @@ int main(int argc, char **argv) {
             current_zone = (current_zone + 1) % US_TIMEZONE_COUNT;
             copy_text(guide.timezone, sizeof(guide.timezone), US_TIMEZONES[current_zone]);
             printf("\x1b[2J\x1b[HRefreshing guide for %s...\n", guide.timezone);
-            if (!fetch_guide()) load_demo_guide();
+            if (!reload_guide()) load_demo_guide();
             selected_channel = 0;
             selected_programme = 0;
             show_details = false;
