@@ -107,13 +107,6 @@ static void load_configuration(void) {
     fclose(file);
 }
 
-static int channel_index_for_id(const char *id) {
-    for (int i = 0; i < guide.channel_count; ++i) {
-        if (strcmp(guide.channels[i].id, id) == 0) return i;
-    }
-    return -1;
-}
-
 static char *next_field(char **save) {
     return strtok_r(NULL, "|", save);
 }
