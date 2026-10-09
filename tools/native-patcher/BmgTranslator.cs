@@ -185,7 +185,7 @@ internal static class BmgTranslator
             return false;
         }
 
-        var usedIndices = matches.Select(m => int.Parse(m.Groups["index"].Value))
+        var usedIndices = matches.Cast<Match>().Select(m => int.Parse(m.Groups["index"].Value))
             .Distinct().OrderBy(i => i).ToArray();
         if (!usedIndices.SequenceEqual(Enumerable.Range(0, controlTags.Count)))
         {
@@ -346,10 +346,10 @@ internal static class BmgTranslator
             throw new InvalidDataException($"BMG round-trip mismatch: '{text}'.");
 
         // A tag may contain null bytes. The terminator scanner must skip its payload.
-        byte[] tagged = { 0x00, 0x1A, 0x06, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x00, 0x00 };
+        byte[] tagged = { 0x00, 0x1A, 0x06, 0x02, 0x00, 0x00, 0x00, 0x41, 0x00, 0x00 };
         int tagEnd = FindTerminator(tagged, 0, true);
-        if (tagEnd != 10)
-            throw new InvalidDataException($"BMG control-tag scan ended at {tagEnd} instead of 10.");
+        if (tagEnd != 8)
+            throw new InvalidDataException($"BMG control-tag scan ended at {tagEnd} instead of 8.");
     }
 
     private static int Align(int value, int alignment) => (value + alignment - 1) & ~(alignment - 1);
