@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-wii:
@@ -43,3 +43,33 @@ jobs:
             wii/tv-guide-usa.dol
             wii/tv-guide-usa.elf
             wii/tv-guide-usa.map
+
+  publish-nightly:
+    name: Publish TV Guide USA Nightly DOL
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-wii
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build output
+        uses: actions/download-artifact@v6
+        with:
+          name: tv-guide-usa-wii-${{ github.sha }}
+          path: dist
+
+      - name: Publish or update nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: TV Guide USA Nightly
+          body: |
+            Automated US-English Wii homebrew frontend build from the latest main commit.
+
+            This release contains the DOL executable for testing. It is not a WAD. WAD packaging requires local/user-supplied base WAD and banner/icon U8 archives; see docs/WAD-BUILD.md. Test in Dolphin before attempting to install anything on a real Wii.
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/tv-guide-usa.dol
+            dist/tv-guide-usa.elf
+            dist/tv-guide-usa.map
