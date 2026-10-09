@@ -1,0 +1,5 @@
+# Copy this file to sd:/apps/tv-guide-channel-wii/config.ini
+# Use the LAN IPv4 address of the computer running the backend.
+# The channel currently uses HTTP for local-network development only.
+server=192.168.1.2
+port=8000
