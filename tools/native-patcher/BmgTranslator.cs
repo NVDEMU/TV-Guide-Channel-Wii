@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace TvGuideNativePatcher;
 
@@ -7,6 +8,7 @@ internal static class BmgTranslator
 {
     private sealed record Section(string Name, byte[] Bytes);
     private static readonly Encoding Utf16Be = Encoding.BigEndianUnicode;
+    private static readonly Regex PlaceholderPattern = new(@"#(?<index>\d{2})", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static bool IsBmg(byte[] original)
     {
@@ -35,8 +37,10 @@ internal static class BmgTranslator
         if (totalSize < 0x20 || totalSize > source.Length)
             throw new InvalidDataException($"{fileName}: BMG file size is invalid.");
 
-        Encoding textEncoding = ResolveEncoding(source[0x10]);
-        int charWidth = textEncoding == Utf16Be ? 2 : 1;
+        byte encodingId = source[0x10];
+        Encoding textEncoding = ResolveEncoding(encodingId);
+        bool isUtf16 = encodingId == 2;
+        int charWidth = isUtf16 ? 2 : 1;
         int sectionCount = checked((int)ReadU32(source, 12));
         if (sectionCount < 2 || sectionCount > 64)
             throw new InvalidDataException($"{fileName}: invalid BMG section count {sectionCount}.");
@@ -72,7 +76,8 @@ internal static class BmgTranslator
         using var payload = new MemoryStream();
         var newOffsets = new List<uint>(messageCount);
         var originalEntries = new List<byte[]>(messageCount);
-        int datPayloadStart = 8;
+        const int datPayloadStart = 8;
+
         for (int i = 0; i < messageCount; i++)
         {
             int entryOffset = 16 + i * entrySize;
@@ -82,13 +87,15 @@ internal static class BmgTranslator
                 throw new InvalidDataException($"{fileName}: message {i} offset is outside DAT1.");
 
             int oldStart = checked((int)oldStartLong);
-            int oldEnd = FindTerminator(dat, oldStart, textEncoding);
-            byte[] messageBytes = dat.AsSpan(oldStart, oldEnd - oldStart).ToArray();
+            int oldEnd = FindTerminator(dat, oldStart, isUtf16);
+            byte[] originalMessage = dat.AsSpan(oldStart, oldEnd - oldStart).ToArray();
             byte[] entry = inf.AsSpan(entryOffset, entrySize).ToArray();
+            byte[] messageBytes = originalMessage;
 
-            if (TryGetTranslation(translations, fileName, i, out string? translated))
+            if (TryGetTranslation(translations, fileName, i, out string? translated)
+                && TryEncodeTranslation(originalMessage, translated, textEncoding, isUtf16, out byte[] translatedBytes))
             {
-                messageBytes = textEncoding.GetBytes(translated.Replace("\\n", "\n", StringComparison.Ordinal));
+                messageBytes = translatedBytes;
                 count++;
             }
 
@@ -118,25 +125,21 @@ internal static class BmgTranslator
             writeAt += section.Bytes.Length;
         }
 
-        // Preserve an existing IMD5 wrapper and recompute its hash after the data changes.
+        // Preserve an existing IMD5 wrapper and recompute the hash after edits.
         return hadImd5 ? Headers.IMD5.AddHeader(output) : output;
     }
 
     private static Encoding ResolveEncoding(byte code)
     {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         return code switch
         {
-            0 => ResolveShiftJis(),
-            1 => new UTF8Encoding(false, true),
+            1 => Encoding.GetEncoding(1252, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback),
             2 => Utf16Be,
-            _ => throw new InvalidDataException($"Unsupported BMG text encoding value {code}.")
+            3 => Encoding.GetEncoding(932, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback),
+            4 => new UTF8Encoding(false, true),
+            _ => throw new InvalidDataException($"Unsupported BMG character-set value {code}; expected 1, 2, 3 or 4.")
         };
-    }
-
-    private static Encoding ResolveShiftJis()
-    {
-        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        return Encoding.GetEncoding(932, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
     }
 
     private static bool TryGetTranslation(
@@ -151,19 +154,125 @@ internal static class BmgTranslator
             || translations.TryGetValue($"{shortName}:{messageIndex}", out translated);
     }
 
-    private static int FindTerminator(byte[] section, int start, Encoding encoding)
+    private static bool TryEncodeTranslation(
+        byte[] originalMessage,
+        string translated,
+        Encoding encoding,
+        bool isUtf16,
+        out byte[] result)
     {
-        int width = encoding == Utf16Be ? 2 : 1;
-        for (int i = start; i + width <= section.Length; i += width)
+        MatchCollection matches = PlaceholderPattern.Matches(translated);
+        List<byte[]> controlTags = ExtractControlTags(originalMessage, isUtf16);
+
+        if (controlTags.Count == 0)
         {
-            if (width == 2)
+            // A placeholder suggests a runtime field. Do not emit a visible "#00"
+            // if its corresponding native control tag was not present in the source.
+            if (matches.Count > 0)
             {
-                if (section[i] == 0 && section[i + 1] == 0) return i;
+                result = originalMessage;
+                return false;
             }
-            else if (section[i] == 0)
+            result = encoding.GetBytes(translated.Replace("\\n", "\n", StringComparison.Ordinal));
+            return true;
+        }
+
+        if (matches.Count == 0)
+        {
+            // Dropping binary tags can break dynamic data or text formatting. Skip
+            // this entry unless the translation explicitly places every source tag.
+            result = originalMessage;
+            return false;
+        }
+
+        var usedIndices = matches.Select(m => int.Parse(m.Groups["index"].Value))
+            .Distinct().OrderBy(i => i).ToArray();
+        if (!usedIndices.SequenceEqual(Enumerable.Range(0, controlTags.Count)))
+        {
+            result = originalMessage;
+            return false;
+        }
+
+        string normalizedText = translated.Replace("\\n", "\n", StringComparison.Ordinal);
+        MatchCollection normalizedMatches = PlaceholderPattern.Matches(normalizedText);
+        using var output = new MemoryStream();
+        int cursor = 0;
+        foreach (Match match in normalizedMatches)
+        {
+            output.Write(encoding.GetBytes(normalizedText[cursor..match.Index]));
+            int tagIndex = int.Parse(match.Groups["index"].Value);
+            output.Write(controlTags[tagIndex]);
+            cursor = match.Index + match.Length;
+        }
+        output.Write(encoding.GetBytes(normalizedText[cursor..]));
+        result = output.ToArray();
+        return true;
+    }
+
+    private static List<byte[]> ExtractControlTags(byte[] message, bool isUtf16)
+    {
+        var tags = new List<byte[]>();
+        int step = isUtf16 ? 2 : 1;
+        for (int i = 0; i + step <= message.Length;)
+        {
+            bool isTag = isUtf16
+                ? ReadU16(message, i) == 0x001A
+                : message[i] == 0x1A;
+            if (!isTag)
             {
-                return i;
+                i += step;
+                continue;
             }
+
+            int lengthOffset = i + step;
+            if (lengthOffset >= message.Length)
+                throw new InvalidDataException("Truncated BMG control tag.");
+            int tagLength = message[lengthOffset];
+            if (tagLength < step + 4 || i + tagLength > message.Length || (isUtf16 && (tagLength & 1) != 0))
+                throw new InvalidDataException("Invalid BMG control tag length.");
+            tags.Add(message.AsSpan(i, tagLength).ToArray());
+            i += tagLength;
+        }
+        return tags;
+    }
+
+    private static int FindTerminator(byte[] section, int start, bool isUtf16)
+    {
+        int step = isUtf16 ? 2 : 1;
+        for (int i = start; i + step <= section.Length;)
+        {
+            if (isUtf16)
+            {
+                ushort unit = ReadU16(section, i);
+                if (unit == 0) return i;
+                if (unit == 0x001A)
+                {
+                    int lengthOffset = i + 2;
+                    if (lengthOffset >= section.Length)
+                        throw new InvalidDataException("Truncated BMG control tag.");
+                    int tagLength = section[lengthOffset];
+                    if (tagLength < 6 || i + tagLength > section.Length || (tagLength & 1) != 0)
+                        throw new InvalidDataException("Invalid BMG control tag length.");
+                    i += tagLength;
+                    continue;
+                }
+            }
+            else
+            {
+                if (section[i] == 0) return i;
+                if (section[i] == 0x1A)
+                {
+                    int lengthOffset = i + 1;
+                    if (lengthOffset >= section.Length)
+                        throw new InvalidDataException("Truncated BMG control tag.");
+                    int tagLength = section[lengthOffset];
+                    if (tagLength < 5 || i + tagLength > section.Length)
+                        throw new InvalidDataException("Invalid BMG control tag length.");
+                    i += tagLength;
+                    continue;
+                }
+            }
+            i += step;
         }
         throw new InvalidDataException("BMG message has no terminator.");
     }
@@ -203,12 +312,12 @@ internal static class BmgTranslator
 
     public static void SelfTest()
     {
-        // One string "Old" at the start of DAT1's payload (offset 0).
+        // One UTF-16BE string "Old" at the start of DAT1's payload (offset 0).
         byte[] source = new byte[96];
         "MESGbmg1"u8.CopyTo(source);
         WriteU32(source, 8, (uint)source.Length);
         WriteU32(source, 12, 2);
-        source[0x10] = 2; // UTF-16BE
+        source[0x10] = 2;
 
         int inf = 32;
         "INF1"u8.CopyTo(source.AsSpan(inf, 4));
@@ -231,10 +340,16 @@ internal static class BmgTranslator
         int translatedDat = translatedInf + checked((int)ReadU32(translated, translatedInf + 4));
         uint offset = ReadU32(translated, translatedInf + 16);
         int start = translatedDat + 8 + checked((int)offset);
-        int end = FindTerminator(translated, start, Utf16Be);
+        int end = FindTerminator(translated, start, true);
         string text = Utf16Be.GetString(translated, start, end - start);
         if (!string.Equals(text, "New text", StringComparison.Ordinal))
             throw new InvalidDataException($"BMG round-trip mismatch: '{text}'.");
+
+        // A tag may contain null bytes. The terminator scanner must skip its payload.
+        byte[] tagged = { 0x00, 0x1A, 0x06, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x41, 0x00, 0x00 };
+        int tagEnd = FindTerminator(tagged, 0, true);
+        if (tagEnd != 10)
+            throw new InvalidDataException($"BMG control-tag scan ended at {tagEnd} instead of 10.");
     }
 
     private static int Align(int value, int alignment) => (value + alignment - 1) & ~(alignment - 1);
