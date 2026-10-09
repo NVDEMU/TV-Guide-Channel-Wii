@@ -47,7 +47,7 @@ def test_inspect_wad_extracts_title_and_validates_lengths(tmp_path) -> None:
     assert result["content_count"] == 1
     assert result["region_code"] == 0
     assert result["region_name"] == "Japan"
-    assert result["file_size"] == 0x40 + 0x140 + 0xA4 + 36 + 0x40
+    assert result["file_size"] == 0x2C0
 
 
 def test_inspect_wad_rejects_section_length_mismatch(tmp_path) -> None:
