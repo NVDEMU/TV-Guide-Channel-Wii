@@ -1,3 +1,4 @@
+using libWiiSharp;
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.RegularExpressions;
