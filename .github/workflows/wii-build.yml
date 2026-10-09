@@ -210,6 +210,44 @@ jobs:
             dist/wad/TV-Guide-USA.wad
             dist/wad/TV-Guide-USA-Dolphin-Test-Kit.zip
 
+  native-ui-resource-audit:
+    name: Audit native TV no Tomo message resources
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.build_native_preview)
+    continue-on-error: true
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Fetch tooling and build native BMG inspector
+        run: |
+          mkdir -p .tools
+          git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
+          python tools/prepare_wad_tool.py .tools/WadPakk
+          dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release
+          dotnet build tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
+          dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --self-test
+
+      - name: Inspect native TV no Tomo strings without exporting the original WAD
+        run: |
+          mkdir -p build
+          dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --audit-latest "$PWD/build/native-ui-audit.json" "$PWD/translations/native-english-messages.json"
+          python -c "import json; d=json.load(open('build/native-ui-audit.json')); print('BMG files:', d['fileCount']); print('candidate translations:', len(d['translationCandidates'])); print('unmatched candidate keys:', len(d['unmatchedTranslationKeys'])); print('resource parse errors:', len(d['resourceErrors']))"
+
+      - name: Upload short-lived source-text audit (no WAD or executable)
+        uses: actions/upload-artifact@v6
+        with:
+          name: tv-guide-native-ui-audit-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
+          path: build/native-ui-audit.json
+
   native-ui-preview:
     name: Build native TV no Tomo UI localization preview
     if: github.event_name == 'workflow_dispatch' && inputs.build_native_preview
