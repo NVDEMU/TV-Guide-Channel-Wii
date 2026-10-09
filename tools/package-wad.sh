@@ -41,35 +41,8 @@ if [[ ! -f "$WADPAKK_DIR/WadPakk.csproj" ]]; then
   git clone --depth 1 https://github.com/davi-x86/WadPakk.git "$WADPAKK_DIR"
 fi
 
-# WadPakk upstream pins Windows x86. Normalize the local clone for .NET on
-# macOS/Linux and set the new channel's TMD region to the United States.
-python3 - "$WADPAKK_DIR/WadPakk.csproj" "$WADPAKK_DIR/Program.cs" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-project = Path(sys.argv[1])
-program = Path(sys.argv[2])
-if not project.is_file() or not program.is_file():
-    raise SystemExit("The WadPakk source checkout is incomplete.")
-
-project_text = project.read_text(encoding="utf-8-sig")
-for tag in ("PlatformTarget", "RuntimeIdentifier"):
-    project_text = re.sub(
-        rf"\s*<{tag}>.*?</{tag}>", "", project_text, flags=re.DOTALL
-    )
-project.write_text(project_text, encoding="utf-8")
-
-program_text = program.read_text(encoding="utf-8-sig")
-marker = "WAD wad = WAD.Load(basePath);"
-region_line = "        wad.Region = Region.USA; // TV Guide USA output region"
-if region_line not in program_text:
-    if marker not in program_text:
-        raise SystemExit("Cannot patch WAD region: WadPakk source structure changed.")
-    program_text = program_text.replace(marker, marker + "\n" + region_line, 1)
-program.write_text(program_text, encoding="utf-8")
-PY
-
+# Prepare the ignored third-party tool checkout for macOS/Linux and USA region.
+python3 "$ROOT/tools/prepare-wad-tool.py" "$WADPAKK_DIR"
 mkdir -p "$(dirname "$OUTPUT")"
 BANNER_BIN="$EXPLICIT_BANNER"
 ICON_BIN="$EXPLICIT_ICON"
