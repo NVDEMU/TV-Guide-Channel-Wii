@@ -43,7 +43,8 @@ def load_us_programmes(path: str | Path, *, limit_channels: int = 12) -> list[di
             continue
         displays = channel.findall("display-name")
         english = next((item for item in displays if item.attrib.get("lang", "").lower().startswith("en")), None)
-        name = _text(english or (displays[0] if displays else None), channel_id)
+        chosen_display = english if english is not None else (displays[0] if displays else None)
+        name = _text(chosen_display, channel_id)
         if name:
             names[channel_id] = name[:80]
 
@@ -65,8 +66,10 @@ def load_us_programmes(path: str | Path, *, limit_channels: int = 12) -> list[di
         descriptions = element.findall("desc")
         english_title = next((item for item in titles if item.attrib.get("lang", "").lower().startswith("en")), None)
         english_desc = next((item for item in descriptions if item.attrib.get("lang", "").lower().startswith("en")), None)
-        title = _text(english_title or (titles[0] if titles else None), "Untitled programme")
-        description = _text(english_desc or (descriptions[0] if descriptions else None))
+        chosen_title = english_title if english_title is not None else (titles[0] if titles else None)
+        chosen_desc = english_desc if english_desc is not None else (descriptions[0] if descriptions else None)
+        title = _text(chosen_title, "Untitled programme")
+        description = _text(chosen_desc)
         programmes.append(
             {
                 "channel_id": channel_id,
