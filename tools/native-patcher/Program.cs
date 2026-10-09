@@ -24,6 +24,13 @@ internal static class Program
                 return 0;
             }
 
+            if (args[0] == "--self-test")
+            {
+                BmgTranslator.SelfTest();
+                Console.WriteLine("BMG translator self-test passed.");
+                return 0;
+            }
+
             if (args[0] == "--download-latest")
             {
                 if (args.Length < 2)
@@ -40,16 +47,8 @@ internal static class Program
                 Directory.CreateDirectory(downloadDirectory);
                 try
                 {
-                    Console.WriteLine("Downloading the latest original TV no Tomo title from Nintendo's title server...");
-                    using (NusClient nus = new NusClient())
-                        nus.DownloadTitle(OriginalTitleId, string.Empty, downloadDirectory, StoreType.WAD);
-
-                    string[] candidates = Directory.GetFiles(downloadDirectory, OriginalTitleId + "v*.wad");
-                    if (candidates.Length == 0)
-                        throw new FileNotFoundException(
-                            "NUS completed without producing the expected TV no Tomo WAD. The title may no longer be offered by that server.");
-
-                    PatchTitle(candidates.OrderBy(path => path, StringComparer.Ordinal).Last(), output, translationsPath);
+                    string originalWad = DownloadOriginalTitle(downloadDirectory);
+                    PatchTitle(originalWad, output, translationsPath);
                     return 0;
                 }
                 finally
@@ -86,9 +85,44 @@ internal static class Program
         Console.WriteLine("Native TV no Tomo UI localization preview");
         Console.WriteLine("  native-title-patcher <input.wad> <output.wad> [translation.json]");
         Console.WriteLine("  native-title-patcher --download-latest <output.wad> [translation.json]");
+        Console.WriteLine("  native-title-patcher --self-test");
         Console.WriteLine();
         Console.WriteLine("The NUS mode downloads a title to a temporary directory, patches it, then deletes the downloaded source.");
         Console.WriteLine("This localizes a starter set of UI messages and title metadata; guide-service replacement is not yet implemented.");
+    }
+
+    private static string DownloadOriginalTitle(string temporaryRoot)
+    {
+        string[] servers =
+        {
+            "https://ccs.shop.wii.com/ccs/download/",
+            "https://ccs.cdn.c.shop.nintendowifi.net/ccs/download/",
+            "https://nus.cdn.shop.wii.com/ccs/download/",
+            "http://nus.cdn.shop.wii.com/ccs/download/"
+        };
+        var failures = new List<string>();
+        foreach (string server in servers)
+        {
+            string directory = Path.Combine(temporaryRoot, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                Console.WriteLine($"Trying original title server: {new Uri(server).Host}");
+                using NusClient nus = new NusClient();
+                nus.DownloadTitle(OriginalTitleId, string.Empty, directory, server, StoreType.WAD);
+                string[] candidates = Directory.GetFiles(directory, OriginalTitleId + "v*.wad");
+                if (candidates.Length > 0)
+                    return candidates.OrderBy(path => path, StringComparer.Ordinal).Last();
+                failures.Add($"{server}: no WAD output was written");
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{server}: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+        throw new InvalidOperationException(
+            "The original TV no Tomo title could not be downloaded from the checked NUS endpoints. " +
+            "The service may have removed the title. Details: " + string.Join(" | ", failures));
     }
 
     private static void PatchTitle(string input, string output, string translationsPath)
