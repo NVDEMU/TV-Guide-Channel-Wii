@@ -293,3 +293,4 @@ jobs:
           dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release
           dotnet build tools/wad-assets/WadAssetExtractor.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
           dotnet build tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
+          dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --self-test
