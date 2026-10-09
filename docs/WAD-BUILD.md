@@ -19,7 +19,7 @@ Do not upload a base WAD, Wii keys, tickets, certificates, NAND backup, or propr
 
 A GitHub Actions workflow now compiles the Wii DOL, fetches the attributed TVmaze snapshot, validates the supplied base WAD and packages an installable WAD on a GitHub runner.
 
-1. Store a download URL for your own base WAD as the repository Actions secret `TV_GUIDE_BASE_WAD_URL`. Use a private or short-lived URL; the workflow does not need the WAD to be committed to the source repository.
+1. Store a download URL for your own base WAD as the repository Actions secret `TV_GUIDE_BASE_WAD_URL`. Use a private or short-lived URL; the workflow does not need the WAD to be committed to the source repository. If it is a private GitHub Release asset, use its authenticated API URL (`https://api.github.com/repos/OWNER/PRIVATE_REPO/releases/assets/ASSET_ID`) and also add a fine-grained read-only token as `TV_GUIDE_BASE_WAD_TOKEN`. The workflow supports a URL that needs no login as well, in which case the token secret can be omitted.
 2. Open **Actions → Wii Channel Build → Run workflow**.
 3. Check **package_wad** and run it.
 4. Download the `tv-guide-usa-wad-<commit>` artifact. It contains `TV-Guide-USA.wad` and `TV-Guide-USA-Dolphin-Test-Kit.zip`.
