@@ -42,7 +42,7 @@ if [[ ! -f "$WADPAKK_DIR/WadPakk.csproj" ]]; then
 fi
 
 # Prepare the ignored third-party tool checkout for macOS/Linux and USA region.
-python3 "$ROOT/tools/prepare-wad-tool.py" "$WADPAKK_DIR"
+python3 "$ROOT/tools/prepare_wad_tool.py" "$WADPAKK_DIR"
 mkdir -p "$(dirname "$OUTPUT")"
 BANNER_BIN="$EXPLICIT_BANNER"
 ICON_BIN="$EXPLICIT_ICON"
