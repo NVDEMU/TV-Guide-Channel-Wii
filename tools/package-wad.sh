@@ -57,6 +57,10 @@ dotnet run --project "$WADPAKK_DIR/WadPakk.csproj" --configuration Release -- \
   -dol "$DOL" -id TVG1 -name "TV Guide USA" -ios 58 -o "$OUTPUT"
 
 [[ -s "$OUTPUT" ]] || die "WAD packager did not create the expected output."
+# WadPakk/libWiiSharp sizes the final record using plaintext bytes although
+# AES-CBC storage pads it to 16-byte blocks. Normalize this WAD header field
+# before structural validation; no content bytes or title metadata are altered.
+python3 "$ROOT/tools/normalize_wad_content_size.py" "$OUTPUT" || die "Could not normalize WAD content-size metadata."
 python3 "$ROOT/tools/inspect_wad.py" "$OUTPUT" >/dev/null || die "Generated WAD failed structural validation."
 printf '\nWAD created and structurally validated: %s\n' "$OUTPUT"
 printf 'Note: this standalone prototype is not yet a translation of the original TV no Tomo UI/assets. Test in Dolphin before using a real Wii.\n'
