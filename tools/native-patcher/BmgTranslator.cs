@@ -1,148 +1,225 @@
 using System.Buffers.Binary;
 using System.Text;
-using System.Text.Json;
 
 namespace TvGuideNativePatcher;
 
 internal static class BmgTranslator
 {
-    private static readonly Encoding BigEndianUtf16 = Encoding.BigEndianUnicode;
+    private sealed record Section(string Name, byte[] Bytes);
+    private static readonly Encoding Utf16Be = Encoding.BigEndianUnicode;
 
-    public static byte[] Translate(byte[] source, string fileName, IReadOnlyDictionary<string, string> translations, out int count)
+    public static byte[] Translate(byte[] original, string fileName, IReadOnlyDictionary<string, string> translations, out int count)
     {
         count = 0;
-        if (source.Length < 0x40 || !source.AsSpan(0, 8).SequenceEqual("MESGbmg1"u8))
-            return source;
+        bool hadImd5 = Headers.DetectHeader(original) == Headers.HeaderType.IMD5;
+        byte[] source = hadImd5 ? Headers.IMD5.RemoveHeader(original) : original;
+        if (source.Length < 0x20 || !source.AsSpan(0, 8).SequenceEqual("MESGbmg1"u8))
+            return original;
 
         int totalSize = checked((int)ReadU32(source, 8));
-        if (totalSize > source.Length || totalSize < 0x30)
+        if (totalSize < 0x20 || totalSize > source.Length)
             throw new InvalidDataException($"{fileName}: BMG file size is invalid.");
 
-        int infOffset = FindSection(source, "INF1");
-        int infSize = checked((int)ReadU32(source, infOffset + 4));
-        int messageCount = ReadU16(source, infOffset + 8);
-        int entrySize = ReadU16(source, infOffset + 10);
-        if (entrySize != 4 || infSize < 16 + messageCount * entrySize)
-            throw new InvalidDataException($"{fileName}: unsupported BMG INF1 table.");
+        Encoding textEncoding = ResolveEncoding(source[0x10]);
+        int charWidth = textEncoding == Utf16Be ? 2 : 1;
+        int sectionCount = checked((int)ReadU32(source, 12));
+        if (sectionCount < 2 || sectionCount > 64)
+            throw new InvalidDataException($"{fileName}: invalid BMG section count {sectionCount}.");
 
-        int datOffset = FindSection(source, "DAT1");
-        int datSize = checked((int)ReadU32(source, datOffset + 4));
-        int datPayload = datOffset + 8;
-        if (datSize < 8 || datOffset + datSize > totalSize)
-            throw new InvalidDataException($"{fileName}: invalid BMG DAT1 section.");
+        var sections = new List<Section>(sectionCount);
+        int position = 0x20;
+        for (int i = 0; i < sectionCount; i++)
+        {
+            if (position + 8 > totalSize)
+                throw new InvalidDataException($"{fileName}: BMG section header {i} is truncated.");
+            string sectionName = Encoding.ASCII.GetString(source, position, 4);
+            int sectionLength = checked((int)ReadU32(source, position + 4));
+            if (sectionLength < 8 || position + sectionLength > totalSize)
+                throw new InvalidDataException($"{fileName}: section {sectionName} has an invalid size.");
+            sections.Add(new Section(sectionName, source.AsSpan(position, sectionLength).ToArray()));
+            position += sectionLength;
+        }
 
-        var payload = new MemoryStream();
-        payload.WriteByte(0);
-        payload.WriteByte(0); // The original format starts message offsets after a 2-byte sentinel.
-        var messageOffsets = new List<uint>(messageCount);
+        int infIndex = sections.FindIndex(s => s.Name == "INF1");
+        int datIndex = sections.FindIndex(s => s.Name == "DAT1");
+        if (infIndex < 0 || datIndex < 0)
+            throw new InvalidDataException($"{fileName}: BMG requires INF1 and DAT1 sections.");
 
+        byte[] inf = sections[infIndex].Bytes;
+        byte[] dat = sections[datIndex].Bytes;
+        if (inf.Length < 16 || dat.Length < 8)
+            throw new InvalidDataException($"{fileName}: BMG INF1/DAT1 section is too short.");
+        int messageCount = ReadU16(inf, 8);
+        int entrySize = ReadU16(inf, 10);
+        if (entrySize < 4 || 16L + (long)messageCount * entrySize > inf.Length)
+            throw new InvalidDataException($"{fileName}: unsupported or truncated INF1 table.");
+
+        using var payload = new MemoryStream();
+        var newOffsets = new List<uint>(messageCount);
+        var originalEntries = new List<byte[]>(messageCount);
+        int datPayloadStart = 8;
         for (int i = 0; i < messageCount; i++)
         {
-            uint oldOffset = ReadU32(source, infOffset + 16 + i * entrySize);
-            long oldStartLong = (long)datPayload + oldOffset;
-            if (oldStartLong < datPayload || oldStartLong + 2 > (long)datOffset + datSize)
+            int entryOffset = 16 + i * entrySize;
+            uint oldOffset = ReadU32(inf, entryOffset);
+            long oldStartLong = (long)datPayloadStart + oldOffset;
+            if (oldStartLong < datPayloadStart || oldStartLong + charWidth > dat.Length)
                 throw new InvalidDataException($"{fileName}: message {i} offset is outside DAT1.");
-            int oldStart = (int)oldStartLong;
-            int oldEnd = FindNullTerminator(source, oldStart, datOffset + datSize);
-            byte[] messageBytes = source.AsSpan(oldStart, oldEnd - oldStart).ToArray();
 
-            if (translations.TryGetValue($"{fileName}:{i}", out string? translated))
+            int oldStart = checked((int)oldStartLong);
+            int oldEnd = FindTerminator(dat, oldStart, textEncoding);
+            byte[] messageBytes = dat.AsSpan(oldStart, oldEnd - oldStart).ToArray();
+            byte[] entry = inf.AsSpan(entryOffset, entrySize).ToArray();
+
+            if (TryGetTranslation(translations, fileName, i, out string? translated))
             {
-                messageBytes = BigEndianUtf16.GetBytes(translated.Replace("\\n", "\n", StringComparison.Ordinal));
+                messageBytes = textEncoding.GetBytes(translated.Replace("\\n", "\n", StringComparison.Ordinal));
                 count++;
             }
 
-            messageOffsets.Add((uint)payload.Length);
+            newOffsets.Add(checked((uint)payload.Length));
+            originalEntries.Add(entry);
             payload.Write(messageBytes);
-            payload.WriteByte(0);
-            payload.WriteByte(0);
+            payload.Write(new byte[charWidth]);
         }
 
-        byte[] infSection = BuildInfoSection(source.AsSpan(infOffset, 16).ToArray(), messageCount, messageOffsets);
-        byte[] datPayloadBytes = payload.ToArray();
-        int datSectionLength = Align(8 + datPayloadBytes.Length, 32);
-        byte[] datSection = new byte[datSectionLength];
-        "DAT1"u8.CopyTo(datSection);
-        WriteU32(datSection, 4, (uint)datSectionLength);
-        datPayloadBytes.CopyTo(datSection, 8);
+        if (count == 0)
+            return original;
 
-        int newTotal = 32 + infSection.Length + datSection.Length;
-        byte[] result = new byte[newTotal];
-        source.AsSpan(0, 32).CopyTo(result);
-        WriteU32(result, 8, (uint)newTotal);
-        WriteU32(result, 12, 2);
-        int writeAt = 32;
-        infSection.CopyTo(result, writeAt);
-        writeAt += infSection.Length;
-        datSection.CopyTo(result, writeAt);
+        byte[] newInf = BuildInfoSection(inf, entrySize, originalEntries, newOffsets);
+        byte[] newDat = BuildDataSection(dat, payload.ToArray());
+        sections[infIndex] = new Section("INF1", newInf);
+        sections[datIndex] = new Section("DAT1", newDat);
+
+        int outputSize = 0x20 + sections.Sum(s => s.Bytes.Length);
+        byte[] output = new byte[outputSize];
+        source.AsSpan(0, 0x20).CopyTo(output);
+        WriteU32(output, 8, checked((uint)outputSize));
+        WriteU32(output, 12, checked((uint)sections.Count));
+        int writeAt = 0x20;
+        foreach (Section section in sections)
+        {
+            section.Bytes.CopyTo(output, writeAt);
+            writeAt += section.Bytes.Length;
+        }
+
+        // Preserve an existing IMD5 wrapper and recompute its hash after the data changes.
+        return hadImd5 ? Headers.IMD5.AddHeader(output) : output;
+    }
+
+    private static Encoding ResolveEncoding(byte code)
+    {
+        return code switch
+        {
+            0 => ResolveShiftJis(),
+            1 => new UTF8Encoding(false, true),
+            2 => Utf16Be,
+            _ => throw new InvalidDataException($"Unsupported BMG text encoding value {code}.")
+        };
+    }
+
+    private static Encoding ResolveShiftJis()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(932, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+    }
+
+    private static bool TryGetTranslation(
+        IReadOnlyDictionary<string, string> translations,
+        string fileName,
+        int messageIndex,
+        out string? translated)
+    {
+        string normalized = fileName.Replace('\\', '/');
+        string shortName = Path.GetFileName(normalized);
+        return translations.TryGetValue($"{normalized}:{messageIndex}", out translated)
+            || translations.TryGetValue($"{shortName}:{messageIndex}", out translated);
+    }
+
+    private static int FindTerminator(byte[] section, int start, Encoding encoding)
+    {
+        int width = encoding == Utf16Be ? 2 : 1;
+        for (int i = start; i + width <= section.Length; i += width)
+        {
+            if (width == 2)
+            {
+                if (section[i] == 0 && section[i + 1] == 0) return i;
+            }
+            else if (section[i] == 0)
+            {
+                return i;
+            }
+        }
+        throw new InvalidDataException("BMG message has no terminator.");
+    }
+
+    private static byte[] BuildInfoSection(
+        byte[] oldSection,
+        int entrySize,
+        IReadOnlyList<byte[]> oldEntries,
+        IReadOnlyList<uint> offsets)
+    {
+        int length = Align(16 + offsets.Count * entrySize, 32);
+        byte[] result = new byte[length];
+        oldSection.AsSpan(0, Math.Min(16, oldSection.Length)).CopyTo(result);
+        "INF1"u8.CopyTo(result);
+        WriteU32(result, 4, checked((uint)length));
+        WriteU16(result, 8, checked((ushort)offsets.Count));
+        WriteU16(result, 10, checked((ushort)entrySize));
+        for (int i = 0; i < offsets.Count; i++)
+        {
+            int entryOffset = 16 + i * entrySize;
+            oldEntries[i].CopyTo(result, entryOffset);
+            WriteU32(result, entryOffset, offsets[i]);
+        }
+        return result;
+    }
+
+    private static byte[] BuildDataSection(byte[] oldSection, byte[] payload)
+    {
+        int length = Align(8 + payload.Length, 32);
+        byte[] result = new byte[length];
+        oldSection.AsSpan(0, 8).CopyTo(result);
+        "DAT1"u8.CopyTo(result);
+        WriteU32(result, 4, checked((uint)length));
+        payload.CopyTo(result, 8);
         return result;
     }
 
     public static void SelfTest()
     {
-        // Minimal two-section UTF-16BE BMG: one string "Old" at DAT1 payload offset 2.
+        // One string "Old" at the start of DAT1's payload (offset 0).
         byte[] source = new byte[96];
         "MESGbmg1"u8.CopyTo(source);
         WriteU32(source, 8, (uint)source.Length);
         WriteU32(source, 12, 2);
+        source[0x10] = 2; // UTF-16BE
 
         int inf = 32;
         "INF1"u8.CopyTo(source.AsSpan(inf, 4));
         WriteU32(source, inf + 4, 32);
         WriteU16(source, inf + 8, 1);
         WriteU16(source, inf + 10, 4);
-        WriteU32(source, inf + 16, 2);
+        WriteU32(source, inf + 16, 0);
 
         int dat = 64;
         "DAT1"u8.CopyTo(source.AsSpan(dat, 4));
         WriteU32(source, dat + 4, 32);
-        BigEndianUtf16.GetBytes("Old").CopyTo(source, dat + 8 + 2);
+        Utf16Be.GetBytes("Old").CopyTo(source, dat + 8);
 
-        byte[] translated = Translate(
-            source,
-            "Test.bmg",
-            new Dictionary<string, string> { ["Test.bmg:0"] = "New text" },
-            out int changed);
+        byte[] translated = Translate(source, "Test.bmg",
+            new Dictionary<string, string> { ["Test.bmg:0"] = "New text" }, out int changed);
         if (changed != 1)
             throw new InvalidDataException($"Expected to translate one BMG message, found {changed}.");
 
-        int translatedInf = FindSection(translated, "INF1");
-        int translatedDat = FindSection(translated, "DAT1");
+        int translatedInf = 32;
+        int translatedDat = translatedInf + checked((int)ReadU32(translated, translatedInf + 4));
         uint offset = ReadU32(translated, translatedInf + 16);
         int start = translatedDat + 8 + checked((int)offset);
-        int end = FindNullTerminator(translated, start, translatedDat + checked((int)ReadU32(translated, translatedDat + 4)));
-        string roundTripText = BigEndianUtf16.GetString(translated, start, end - start);
-        if (!string.Equals(roundTripText, "New text", StringComparison.Ordinal))
-            throw new InvalidDataException($"BMG round-trip mismatch: '{roundTripText}'.");
-    }
-
-    private static byte[] BuildInfoSection(byte[] oldHeader, int count, IReadOnlyList<uint> offsets)
-    {
-        int length = Align(16 + count * 4, 32);
-        byte[] result = new byte[length];
-        oldHeader.CopyTo(result, 0);
-        WriteU32(result, 4, (uint)length);
-        WriteU16(result, 8, (ushort)count);
-        WriteU16(result, 10, 4);
-        for (int i = 0; i < count; i++) WriteU32(result, 16 + i * 4, offsets[i]);
-        return result;
-    }
-
-    private static int FindSection(byte[] source, string name)
-    {
-        int limit = checked((int)Math.Min(ReadU32(source, 8), (uint)source.Length));
-        for (int i = 0x20; i + 8 <= limit; i += 4)
-        {
-            if (source.AsSpan(i, 4).SequenceEqual(Encoding.ASCII.GetBytes(name))) return i;
-        }
-        throw new InvalidDataException($"BMG has no {name} section.");
-    }
-
-    private static int FindNullTerminator(byte[] source, int start, int limit)
-    {
-        for (int i = start; i + 1 < limit; i += 2)
-            if (source[i] == 0 && source[i + 1] == 0) return i;
-        throw new InvalidDataException("BMG message has no terminator.");
+        int end = FindTerminator(translated, start, Utf16Be);
+        string text = Utf16Be.GetString(translated, start, end - start);
+        if (!string.Equals(text, "New text", StringComparison.Ordinal))
+            throw new InvalidDataException($"BMG round-trip mismatch: '{text}'.");
     }
 
     private static int Align(int value, int alignment) => (value + alignment - 1) & ~(alignment - 1);
