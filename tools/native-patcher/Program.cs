@@ -254,6 +254,11 @@ internal static class Program
         // message/archive modifications cause the black screen.
         wad.ChannelTitles = EnglishTitles;
         wad.FakeSign = true;
+        // We do not edit the banner/icon images. libWiiSharp defaults to re-compressing
+        // those inner files on every save; preserve their original bytes instead, since
+        // the previous preview's content-0 SHA-1 check failed after that round-trip.
+        wad.Lz77CompressBannerAndIcon = false;
+        wad.Lz77DecompressBannerAndIcon = false;
 
         string? outputDirectory = Path.GetDirectoryName(output);
         if (!string.IsNullOrEmpty(outputDirectory)) Directory.CreateDirectory(outputDirectory);
@@ -296,7 +301,9 @@ internal static class Program
                 throw new InvalidDataException($"Saved WAD content {item.Index} size does not match the TMD.");
             byte[] hash = sha1.ComputeHash(content);
             if (!hash.SequenceEqual(item.Hash))
-                throw new InvalidDataException($"Saved WAD content {item.Index} SHA-1 does not match the TMD.");
+                throw new InvalidDataException(
+                    $"Saved WAD content index {item.Index} SHA-1 does not match the TMD. " +
+                    $"TMD={Convert.ToHexString(item.Hash)} actual={Convert.ToHexString(hash)} size={content.Length}.");
         }
         Console.WriteLine($"WAD reopen/content-hash validation passed: {Path.GetFileName(path)}");
     }
