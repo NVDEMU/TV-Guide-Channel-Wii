@@ -1,15 +1,19 @@
 # Building an installable TV Guide USA WAD
 
-A Wii DOL is executable homebrew, but the Wii Menu expects a channel package with a valid title structure, boot content, metadata, and banner application. This guide explains the local WAD path without placing Wii keys or proprietary WAD files in the public repository.
+A Wii DOL is executable homebrew, but the Wii Menu expects a channel package with a valid title structure, boot content, metadata, and banner application. The local package script uses your base WAD, extracts its current banner/icon archives when custom assets are not supplied, replaces the boot contents with TV Guide USA, and changes the channel metadata/title region to USA.
+
+## The supplied Japanese base WAD
+
+The supplied `TV no Toma (Japan) (Channel).wad` has already been checked locally. The structural summary is in [BASE-WAD-ANALYSIS.md](BASE-WAD-ANALYSIS.md). The package script looks for a file with that name in the repo root or `~/Wii`; otherwise set `TV_GUIDE_BASE_WAD` to its full path. The binary itself must remain local and is ignored by Git.
 
 ## Prerequisites
 
-- Build `wii/tv-guide-usa.dol` with devkitPro (or download the DOL from a successful Wii Channel Build workflow).
-- A compatible base channel WAD you are authorized to use. It must contain a replaceable `BannerApp`.
-- Valid U8 channel banner/icon archives: `channel-assets/banner.bin` and `channel-assets/icon.bin`. See [channel-assets/README.md](../channel-assets/README.md).
-- .NET 8 SDK and Git. The script clones [WadPakk](https://github.com/davi-x86/WadPakk) into ignored local tooling directory `.tools/WadPakk`.
+- A built `wii/tv-guide-usa.dol` (or download it from a successful [Nightly release](https://github.com/NVDEMU/TV-Guide-Channel-Wii/releases/tag/nightly)).
+- Your local Japanese base WAD (or another compatible WAD that has a readable `BannerApp`).
+- Python 3 and Git.
+- .NET 8 SDK. The script clones [WadPakk](https://github.com/davi-x86/WadPakk) into ignored local tooling and removes its Windows-only runtime pin for macOS/Linux builds.
 
-Do not upload a personal base WAD, Wii keys, ticket, NAND backup, or proprietary channel files to this public repository. The package script does not download or guess a base WAD on your behalf.
+Do not upload a base WAD, Wii keys, tickets, certificates, NAND backup, or proprietary channel executable to this public repository.
 
 ## Build the DOL
 
@@ -18,39 +22,42 @@ make -C wii clean
 make -C wii
 ```
 
-You can run the DOL in Dolphin or from the Homebrew Channel before creating an installed channel.
+## Build the WAD
 
-## Supply local base and banner assets
-
-Export the valid U8 banner/icon archives from a banner editor. Then point the script at your own compatible base WAD:
+Put your file named `TV no Toma (Japan) (Channel).wad` in the repo root or `~/Wii`, or pass an explicit full path:
 
 ```sh
-TV_GUIDE_BASE_WAD="$HOME/Wii/authorized-base.wad" \
-  TV_GUIDE_BANNER_BIN="$PWD/channel-assets/banner.bin" \
-  TV_GUIDE_ICON_BIN="$PWD/channel-assets/icon.bin" \
+TV_GUIDE_BASE_WAD="$HOME/Wii/TV no Toma (Japan) (Channel).wad" \
   bash tools/package-wad.sh
 ```
 
-Optional environment variables:
+No custom banner files are required for a first packaging attempt. The helper extracts the existing `banner.bin` and `icon.bin` from your base WAD and reuses them. That preserves a valid banner structure, but its images may still contain Japanese branding/text. For a fully polished English presentation, create US-English archives with a Wii banner editor and supply them:
 
-- `TV_GUIDE_DOL` — alternative input DOL path.
-- `TV_GUIDE_BASE_WAD` — base WAD file.
-- `TV_GUIDE_BANNER_BIN` — banner U8 archive.
-- `TV_GUIDE_ICON_BIN` — icon U8 archive.
-- `TV_GUIDE_WAD_OUTPUT` — output path (default: `build/TV-Guide-USA.wad`).
-- `WADPAKK_DIR` — an existing WadPakk source checkout if you already have one.
+```sh
+TV_GUIDE_BASE_WAD="$HOME/Wii/TV no Toma (Japan) (Channel).wad" \
+TV_GUIDE_BANNER_BIN="$PWD/channel-assets/banner.bin" \
+TV_GUIDE_ICON_BIN="$PWD/channel-assets/icon.bin" \
+  bash tools/package-wad.sh
+```
 
-The packer assigns the title ID `00010001-54564731` (four-character ID `TVG1`), channel name `TV Guide USA`, and startup IOS 58. The resulting file is local and ignored by Git.
+Environment variables:
+- `TV_GUIDE_DOL` — alternative DOL path.
+- `TV_GUIDE_BASE_WAD` — local base WAD.
+- `TV_GUIDE_BANNER_BIN` — custom banner U8 archive (optional).
+- `TV_GUIDE_ICON_BIN` — custom Wii Menu icon U8 archive (optional).
+- `TV_GUIDE_WAD_OUTPUT` — output path (default `build/TV-Guide-USA.wad`).
+- `WADPAKK_DIR` — existing WadPakk checkout, if available.
+
+The output title ID is `0001000154564731` (`TVG1`), channel title is `TV Guide USA`, TMD region is set to USA, and startup IOS is 58. The pack script validates the WAD envelope after generating it. This structural check does not verify signatures or prove that it will boot.
 
 ## Testing and installation
 
-1. Inspect the packer's output and make sure the WAD file is non-empty.
-2. Test the DOL in Dolphin.
-3. Test the WAD in a separate Dolphin user profile/NAND.
-4. Only then consider installing on a physical Wii.
+1. Test the DOL in Dolphin or via the Homebrew Channel.
+2. Test the WAD in a separate Dolphin user profile/NAND and confirm the displayed title, banner behavior, network connection and guide UI.
+3. Only after successful emulation tests should you consider a real Wii.
 
-Malformed WADs can brick a console. Keep a verified NAND backup and brick-protection setup before installing. A build passing CI does not establish that an installed channel behaves correctly on a physical Wii.
+A malformed WAD can brick a console. Keep a verified NAND backup and brick-protection setup before installing. CI builds the DOL and checks the packaging tools; it does not publish a WAD because the base WAD is local user content.
 
-## What CI does not do
+## Important scope distinction
 
-CI builds and publishes the DOL only. It cannot create a branded WAD until the project owner supplies valid local banner/icon archives and a compatible base WAD. That is intentional: these are user-supplied binary inputs, and the repository must not publish private Wii keys or redistribute proprietary channel content.
+This package replaces the original title's boot contents with our own US-English homebrew frontend and backend. It is **not** a byte-for-byte translation patch of the original Nintendo TV no Tomo executable. It will reuse the base WAD's current banner/icon artwork unless custom English U8 archives are supplied.
