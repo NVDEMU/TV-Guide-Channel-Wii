@@ -280,8 +280,9 @@ jobs:
           WADPAKK_DIR: ${{ github.workspace }}/.tools/WadPakk
         run: |
           mkdir -p build
-          dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --download-latest "$PWD/build/TV-Guide-USA-Native-UI-Preview.wad" "$PWD/translations/native-english-messages.json"
+          dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --download-diagnostics "$PWD/build/TV-Guide-USA-Native-UI-Preview.wad" "$PWD/build/TV-Guide-USA-Metadata-Only-Control.wad" "$PWD/translations/native-english-messages.json"
           python tools/inspect_wad.py build/TV-Guide-USA-Native-UI-Preview.wad
+          python tools/inspect_wad.py build/TV-Guide-USA-Metadata-Only-Control.wad
 
       - name: Upload one-day native UI preview for Dolphin testing
         uses: actions/upload-artifact@v6
@@ -291,6 +292,7 @@ jobs:
           if-no-files-found: error
           path: |
             build/TV-Guide-USA-Native-UI-Preview.wad
+            build/TV-Guide-USA-Metadata-Only-Control.wad
 
   wad-tools-check:
     name: Validate guide and WAD packaging tools
