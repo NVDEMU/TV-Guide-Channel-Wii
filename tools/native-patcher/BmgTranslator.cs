@@ -8,6 +8,21 @@ internal static class BmgTranslator
     private sealed record Section(string Name, byte[] Bytes);
     private static readonly Encoding Utf16Be = Encoding.BigEndianUnicode;
 
+    public static bool IsBmg(byte[] original)
+    {
+        try
+        {
+            byte[] source = Headers.DetectHeader(original) == Headers.HeaderType.IMD5
+                ? Headers.IMD5.RemoveHeader(original)
+                : original;
+            return source.Length >= 0x20 && source.AsSpan(0, 8).SequenceEqual("MESGbmg1"u8);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static byte[] Translate(byte[] original, string fileName, IReadOnlyDictionary<string, string> translations, out int count)
     {
         count = 0;
