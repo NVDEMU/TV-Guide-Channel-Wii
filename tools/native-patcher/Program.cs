@@ -7,7 +7,6 @@ namespace TvGuideNativePatcher;
 internal static class Program
 {
     private const string OriginalTitleId = "0001000148424e4a"; // Japanese TV no Tomo / HBNJ
-    private const string NewUpperTitleId = "TVG1";
     private static readonly string[] EnglishTitles =
     {
         "TV Guide USA", "TV Guide USA", "TV Guide USA", "TV Guide USA",
@@ -222,9 +221,12 @@ internal static class Program
         // Preserve the original app, BRLYT/BRLAN layout and animation resources,
         // textures, sound, controls and native executable. Only supported message
         // tables and Wii Menu title metadata change in this preview.
+        // Keep the original title identity and region in this diagnostic build.
+        // The native executable may rely on its original title ID; changing it at
+        // the same time as its resources makes launch failures much harder to isolate.
+        // Because the title ID is retained, install this preview only in a separate
+        // Dolphin NAND so it cannot overwrite an existing TV no Tomo installation.
         wad.ChannelTitles = EnglishTitles;
-        wad.Region = Region.USA;
-        wad.ChangeTitleID(LowerTitleID.Channel, NewUpperTitleId);
         wad.FakeSign = true;
 
         string? outputDirectory = Path.GetDirectoryName(output);
@@ -236,8 +238,9 @@ internal static class Program
             source = Path.GetFileName(input),
             output,
             originalTitleId = OriginalTitleId,
-            newTitleId = "0001000154564731",
-            region = "USA",
+            outputTitleId = wad.TitleID.ToString("X16"),
+            region = wad.Region.ToString(),
+            preservedOriginalTitleId = wad.TitleID == expectedTitleId,
             translatedMessageCount = patchedMessages,
             patchedArchiveCount = patchedArchives,
             translatedResources = patchedNames,
