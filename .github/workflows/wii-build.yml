@@ -1,0 +1,45 @@
+name: Wii Channel Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-wii:
+    name: Build TV Guide USA DOL
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install Wii SDK libraries
+        run: |
+          dkp-pacman -Sy --needed --noconfirm wii-dev ppc-libfat
+          dkp-pacman -Q | grep -E 'devkitPPC|libogc|libfat|wii-dev' || true
+
+      - name: Compile the Wii application
+        run: |
+          make -C wii clean
+          make -C wii EXTRA_CFLAGS=-Werror
+
+      - name: Verify expected DOL exists
+        run: |
+          test -s wii/tv-guide-usa.dol
+          file wii/tv-guide-usa.dol
+
+      - name: Upload development build
+        uses: actions/upload-artifact@v6
+        with:
+          name: tv-guide-usa-wii-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            wii/tv-guide-usa.dol
+            wii/tv-guide-usa.elf
+            wii/tv-guide-usa.map
