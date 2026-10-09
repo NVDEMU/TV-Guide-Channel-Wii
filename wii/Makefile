@@ -13,10 +13,6 @@ INCLUDES :=
 DATA :=
 LIBS := -lfat
 
-# Override SERVER_HOST at make time if you want a different fallback address.
-SERVER_HOST ?= 192.168.1.2
-CFLAGS += -DTV_GUIDE_SERVER_HOST=\"$(SERVER_HOST)\"
-
 .PHONY: all clean
 all: $(TARGET).dol
 
