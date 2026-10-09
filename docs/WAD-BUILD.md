@@ -10,9 +10,9 @@ The Nightly release includes `TV-Guide-USA.wad`, `tv-guide-usa.dol`, four timezo
 
 ## Native TV no Tomo interface preview (no locally supplied base WAD)
 
-A separate manual workflow attempts to fetch the original title (0001000148424e4a) from Nintendo's title server in a temporary GitHub runner directory, patch selected native message strings plus Wii Menu title/region metadata, validate the output, then upload a short-lived (one-day) artifact for Dolphin testing. The original title/WAD is never committed to this repository or attached to the permanent Nightly release.
+A separate job attempts to fetch the original title (0001000148424e4a) from Nintendo's title server in a temporary GitHub runner directory, patch native message strings plus Wii Menu title/region metadata, validate the output, then upload a short-lived (one-day) artifact for Dolphin testing. It runs on pushes to `main` and can also be manually triggered. The original title/WAD is never committed to this repository or attached to the permanent Nightly release.
 
-To try it, open **Actions → Wii Channel Build → Run workflow**, check **build_native_preview**, and start the run. If NUS still serves the title and the patch succeeds, download the artifact named tv-guide-usa-native-ui-preview-<commit> from that run.
+To get the latest preview, open the latest **Wii Channel Build** workflow run and download the `tv-guide-usa-native-ui-preview-<commit>` artifact. It expires after one day. Manual trigger: **Actions → Wii Channel Build → Run workflow → build_native_preview**.
 
 This is an early native UI localization preview, not a release. It preserves the original executable, layouts, graphics, banner animation, sound and controls, changes the Wii Menu title to TV Guide USA, and translates a starter set of BMG messages. It is not a complete translation yet, some Japanese labels/images remain, and the original app still requests the discontinued TV no Tomo service. The TVmaze/XMLTV API has not yet been adapted to the original protocol.
 
