@@ -75,3 +75,41 @@ def test_xmltv_export_is_well_formed_and_labels_demo_content() -> None:
     programmes = root.findall("programme")
     assert programmes
     assert all(p.findtext("category") == "Demo" for p in programmes)
+
+
+def test_us_english_wii_endpoint_has_explicit_demo_mode() -> None:
+    response = client.get("/api/v1/wii/guide.txt?region=us")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    body = response.text
+    assert body.startswith("TVGUIDE|1|US-EN|America/New_York|DEMO")
+    assert "CHANNEL|demo-abc|ABC (DEMO)" in body
+    assert "PROGRAM|" in body
+    assert body.rstrip().endswith("END")
+
+
+def test_us_region_is_available() -> None:
+    regions = client.get("/api/v1/regions")
+    assert regions.status_code == 200
+    assert any(item["id"] == "us" for item in regions.json())
+
+
+def test_xmltv_import_changes_wii_mode_to_live(tmp_path, monkeypatch) -> None:
+    xmltv = tmp_path / "us.xml"
+    xmltv.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<tv>
+  <channel id="ny.abc"><display-name lang="en">ABC New York</display-name></channel>
+  <programme start="20261009000000 +0000" stop="20261011000000 +0000" channel="ny.abc">
+    <title lang="en">Imported US Programme</title>
+    <desc lang="en">Imported test record.</desc>
+  </programme>
+</tv>""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TV_GUIDE_XMLTV_PATH", str(xmltv))
+    response = client.get("/api/v1/wii/guide.txt?region=us")
+    assert response.status_code == 200
+    assert response.text.startswith("TVGUIDE|1|US-EN|America/New_York|LIVE")
+    assert "CHANNEL|ny.abc|ABC New York" in response.text
+    assert "Imported US Programme" in response.text
