@@ -140,6 +140,7 @@ jobs:
     timeout-minutes: 25
     env:
       TV_GUIDE_BASE_WAD_URL: ${{ secrets.TV_GUIDE_BASE_WAD_URL }}
+      TV_GUIDE_BASE_WAD_TOKEN: ${{ secrets.TV_GUIDE_BASE_WAD_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -172,8 +173,12 @@ jobs:
             echo "::error::Set the TV_GUIDE_BASE_WAD_URL repository Actions secret to a direct, temporarily valid download URL for your own base WAD."
             exit 1
           fi
+          CURL_AUTH=()
+          if [[ -n "${TV_GUIDE_BASE_WAD_TOKEN:-}" ]]; then
+            CURL_AUTH=(-H "Authorization: Bearer ${TV_GUIDE_BASE_WAD_TOKEN}" -H "Accept: application/octet-stream")
+          fi
           curl --fail --silent --show-error --location --retry 2 --max-time 180 \
-            --max-filesize 200000000 "$TV_GUIDE_BASE_WAD_URL" \
+            --max-filesize 200000000 "${CURL_AUTH[@]}" "$TV_GUIDE_BASE_WAD_URL" \
             --output "$RUNNER_TEMP/TV-no-Tomo-base.wad"
           test -s "$RUNNER_TEMP/TV-no-Tomo-base.wad"
           python tools/inspect_wad.py "$RUNNER_TEMP/TV-no-Tomo-base.wad"
