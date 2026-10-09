@@ -94,7 +94,7 @@ def test_us_region_is_available() -> None:
     assert any(item["id"] == "us" for item in regions.json())
 
 
-def test_xmltv_import_changes_wii_mode_to_live(tmp_path, monkeypatch) -> None:
+def test_xmltv_import_changes_wii_mode_to_feed(tmp_path, monkeypatch) -> None:
     xmltv = tmp_path / "us.xml"
     xmltv.write_text(
         """<?xml version="1.0" encoding="UTF-8"?>
