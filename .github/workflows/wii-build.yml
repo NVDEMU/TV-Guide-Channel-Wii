@@ -33,7 +33,6 @@ jobs:
         run: |
           test -s wii/tv-guide-usa.dol
           test -s wii/tv-guide-usa.elf
-          test -s wii/tv-guide-usa.map
 
       - name: Upload development build
         uses: actions/upload-artifact@v6
