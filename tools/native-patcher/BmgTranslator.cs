@@ -26,7 +26,7 @@ internal static class BmgTranslator
         }
     }
 
-    public sealed record MessageSnapshot(int Index, string Text, bool HasControlTags);
+    public sealed record MessageSnapshot(int Index, string Text, int ControlTagCount);
     public sealed record FileSnapshot(string ResourceName, byte EncodingId, int EntrySize, IReadOnlyList<MessageSnapshot> Messages);
 
     public static FileSnapshot Inspect(byte[] original, string resourceName)
@@ -73,7 +73,7 @@ internal static class BmgTranslator
             int end = FindTerminator(dat, start, isUtf16);
             byte[] raw = dat.AsSpan(start, end - start).ToArray();
             List<byte[]> tags = ExtractControlTags(raw, isUtf16);
-            messages.Add(new MessageSnapshot(i, DecodeMessage(raw, encoding, isUtf16), tags.Count > 0));
+            messages.Add(new MessageSnapshot(i, DecodeMessage(raw, encoding, isUtf16), tags.Count));
         }
         return new FileSnapshot(resourceName, encodingId, entrySize, messages);
     }
