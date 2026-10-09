@@ -17,7 +17,7 @@ INCLUDES :=
 # Warning-clean production-like build; CI passes EXTRA_CFLAGS=-Werror.
 CFLAGS := -g -O2 -Wall $(MACHDEP) $(INCLUDE) $(EXTRA_CFLAGS)
 CXXFLAGS := $(CFLAGS)
-LDFLAGS := -g $(MACHDEP) -Wl,-Map,$(notdir $@).map
+LDFLAGS := -g $(MACHDEP) -Wl,-Map,$(TARGET).map
 
 LIBS := -lwiiuse -lbte -lfat -logc -lm
 LIBDIRS :=
