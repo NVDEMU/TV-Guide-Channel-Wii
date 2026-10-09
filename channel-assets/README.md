@@ -1,36 +1,28 @@
 # Wii channel banner and icon assets
 
-The WAD packager expects two **U8 archives**, not PNG/JPEG files:
+The packager accepts two valid U8 archive files:
 
-- `banner.bin` — channel banner archive
-- `icon.bin` — Wii Menu channel icon archive
+- `banner.bin` — the full-screen selected-channel banner
+- `icon.bin` — the Wii Menu channel icon
 
-Put them in this folder using those exact names, or set `TV_GUIDE_BANNER_BIN`
-and `TV_GUIDE_ICON_BIN` to your local paths. They are ignored by Git because
-channel art archives may contain assets you do not have permission to redistribute.
+## Default behavior
 
-## Creating the archives
+If you do not supply custom archives, `tools/package-wad.sh` extracts `banner.bin` and `icon.bin` from your local base WAD using libWiiSharp and reuses them. This makes an initial packaging test possible without hand-building new U8 archives, but **the resulting artwork may still be the original Japanese imagery**. The channel name and native homebrew UI are English; that does not automatically translate text baked into pictures.
 
-Use a Wii channel banner editor such as CustomizeMii with a channel/base WAD
-you are authorized to modify. Create a US-English banner and icon branded
-**TV Guide USA**, then export the `banner.bin` and `icon.bin` U8 archives.
+## Create fully US-English artwork
 
-Keep these display strings in English:
+Use a Wii channel banner editor such as CustomizeMii with assets you own or are authorized to modify. Create a new US-English banner and icon branded **TV Guide USA**, then export the `banner.bin` and `icon.bin` U8 archives.
+
+Recommended strings:
 
 - Channel title: `TV Guide USA`
 - Subtitle: `United States TV Listings`
 - Description: `TV schedules and programme information`
 
-The frontend is a clean homebrew implementation and does not reuse Nintendo's
-original TV no Tomo banner graphics or Japanese proprietary channel executable.
-A PNG or SVG logo alone cannot be used as a Wii banner archive; it must be
-placed into valid Wii banner/icon layouts by the banner editor.
+Set `TV_GUIDE_BANNER_BIN` and `TV_GUIDE_ICON_BIN` to the exported paths when building the WAD. A PNG or SVG alone cannot replace these Wii archive files; it must be placed in a valid banner/icon layout with correctly referenced textures/animations.
+
+Do not commit binary banner files unless you have the rights to redistribute every included asset. A PNG/JPEG artwork export does not need to be committed; the build can reference local archives.
 
 ## Base WAD and safety
 
-Set `TV_GUIDE_BASE_WAD` to a compatible base WAD you are legally entitled to
-use and whose banner application can be replaced by WadPakk. Do not commit any
-base WAD, Wii keys, tickets, NAND backups, or proprietary channel binaries to
-the public repository. Verify the finished channel in Dolphin first. On a
-physical Wii, use a NAND backup and brick-protection setup and install only
-after the DOL has been tested.
+Keep the local base WAD, tickets, Wii keys, certificates and NAND backups out of the public repository. Verify the DOL in Dolphin and test the generated WAD in a separate Dolphin profile before physical installation.
