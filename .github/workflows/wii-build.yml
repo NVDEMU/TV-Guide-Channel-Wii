@@ -99,13 +99,13 @@ jobs:
           python -m pytest -q
           bash -n tools/package-wad.sh
           python tools/inspect_wad.py --help
-          python tools/prepare-wad-tool.py --help
+          python tools/prepare_wad_tool.py --help
 
       - name: Fetch the local WAD packager source
         run: |
           mkdir -p .tools
           git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
-          python tools/prepare-wad-tool.py .tools/WadPakk
+          python tools/prepare_wad_tool.py .tools/WadPakk
 
       - name: Build portable WAD packager and asset extractor
         run: |
