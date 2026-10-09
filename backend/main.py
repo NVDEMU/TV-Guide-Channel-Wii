@@ -324,20 +324,35 @@ def export_xmltv(
 @app.get("/api/v1/wii/guide.txt", tags=["Wii channel"])
 def wii_guide_text(
     region: str = Query(default="us", description="US-English guide region"),
+    timezone_name: str = Query(default="America/New_York", alias="timezone"),
 ) -> Response:
     """Return a tiny pipe-delimited guide payload for the Wii homebrew client.
 
     This is a project-specific development protocol. The production feed is
     controlled via TV_GUIDE_XMLTV_PATH; otherwise every record is marked demo.
+    A selected US time zone is used for display, while imported timestamps keep
+    their source offsets internally.
     """
+    zones = {
+        "America/New_York": ZoneInfo("America/New_York"),
+        "America/Chicago": ZoneInfo("America/Chicago"),
+        "America/Denver": ZoneInfo("America/Denver"),
+        "America/Los_Angeles": ZoneInfo("America/Los_Angeles"),
+    }
     if region != "us":
         raise HTTPException(status_code=404, detail="The Wii client currently supports region 'us'.")
-    start, end = _resolve_window(None, None, EASTERN)
+    if timezone_name not in zones:
+        raise HTTPException(
+            status_code=422,
+            detail="Unsupported timezone. Choose US Eastern, Central, Mountain, or Pacific.",
+        )
+    selected_tz = zones[timezone_name]
+    start, end = _resolve_window(None, None, selected_tz)
     end = start + timedelta(hours=6)
     programmes = _configured_or_demo_us(start, end)
     imported = configured_us_programmes() is not None
     mode = "LIVE" if imported else "DEMO"
-    lines = [f"TVGUIDE|1|US-EN|America/New_York|{mode}"]
+    lines = [f"TVGUIDE|1|US-EN|{timezone_name}|{mode}"]
     channels: dict[str, str] = {}
     for programme in programmes:
         channel_id = _safe_field(programme["channel_id"], 60)
@@ -350,8 +365,8 @@ def wii_guide_text(
         per_channel[channel_id] = per_channel.get(channel_id, 0) + 1
         if per_channel[channel_id] > 4:
             continue
-        start_dt = datetime.fromisoformat(programme["start"]).astimezone(EASTERN)
-        end_dt = datetime.fromisoformat(programme["end"]).astimezone(EASTERN)
+        start_dt = datetime.fromisoformat(programme["start"]).astimezone(selected_tz)
+        end_dt = datetime.fromisoformat(programme["end"]).astimezone(selected_tz)
         lines.append(
             "PROGRAM|"
             + "|".join(
