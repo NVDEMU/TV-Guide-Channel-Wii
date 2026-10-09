@@ -64,7 +64,7 @@ jobs:
           body: |
             Automated US-English Wii homebrew frontend build from the latest main commit.
 
-            This release contains the DOL executable for testing. It is not a WAD. WAD packaging requires local/user-supplied base WAD and banner/icon U8 archives; see docs/WAD-BUILD.md. Test in Dolphin before attempting to install anything on a real Wii.
+            This release contains the DOL executable for testing. It is not a WAD. WAD packaging uses a local base WAD; the script extracts existing banner/icon U8 archives as a fallback, while custom US-English art is optional. See docs/WAD-BUILD.md. Test in Dolphin before attempting to install anything on a real Wii.
           prerelease: true
           make_latest: false
           overwrite_files: true
