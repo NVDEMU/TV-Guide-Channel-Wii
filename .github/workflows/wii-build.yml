@@ -19,10 +19,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Install Wii SDK libraries
+      - name: Verify Wii SDK libraries
         run: |
-          dkp-pacman -Sy --needed --noconfirm wii-dev ppc-libfat
-          dkp-pacman -Q | grep -E 'devkitPPC|libogc|libfat|wii-dev' || true
+          dkp-pacman -Q | grep -E 'devkitppc|libogc|libfat' || true
+          test -x "$DEVKITPPC/bin/powerpc-eabi-gcc"
 
       - name: Compile the Wii application
         run: |
