@@ -32,6 +32,12 @@ Open [Actions → Wii Channel Build](https://github.com/NVDEMU/TV-Guide-Channel-
 - [Latest Nightly release (DOL + WAD + test kit + guide files)](https://github.com/NVDEMU/TV-Guide-Channel-Wii/releases/tag/nightly)
 - [Latest GitHub Actions runs](https://github.com/NVDEMU/TV-Guide-Channel-Wii/actions)
 
+### Preview the original TV no Tomo UI in English
+
+The generic Nightly WAD is not the target look. To build a native-title preview without uploading or committing a base WAD, open [Actions → Wii Channel Build](https://github.com/NVDEMU/TV-Guide-Channel-Wii/actions/workflows/wii-build.yml), select **Run workflow**, and check **build_native_preview**. If Nintendo's title server still provides the original HBNJ title, the runner downloads it temporarily, patches the native app's title metadata and a first set of BMG strings, then uploads a test WAD artifact for one day. The original WAD is not added to the repository or permanent release.
+
+This preview keeps the original executable, artwork/layouts and banner animation, but its translation is incomplete and its original guide requests still point at the discontinued TV no Tomo service. The native protocol/US guide adapter has not been finished yet. The previous direct-DOL “Failed to init core” report also remains undiagnosed; install the generated WAD in a separate Dolphin NAND to test the channel boot path more directly.
+
 ### Test the WAD in Dolphin
 
 1. Download `TV-Guide-USA.wad` from the Nightly release.
@@ -42,7 +48,7 @@ Open [Actions → Wii Channel Build](https://github.com/NVDEMU/TV-Guide-Channel-
 
 For an HBC/DOL test instead, download the test kit and use its `sd/apps/tv-guide-channel-wii/boot.dol` path as an emulated SD card, then launch it through the Homebrew Channel. A bare DOL opened directly in Dolphin can follow a different launch path; the previous `Failed to init core` report is not yet diagnosed, so testing through the generated WAD and HBC will help isolate it.
 
-The standalone WAD is a boot/test milestone, **not** the finished TV no Tomo revival. Its current banner assets come from a generic homebrew template. A true original-look version will need the original channel's graphics/layout and application flow to be localized and adapted, rather than merely placing the current DOL inside a WAD.
+The standalone Nightly WAD is only a packaging/boot prototype and still uses a generic banner. The separate native-title preview is the first step toward the original look. Neither should be described as a complete TV no Tomo revival until the UI is fully localized and the original guide service is replaced.
 
 ## Development locally
 
