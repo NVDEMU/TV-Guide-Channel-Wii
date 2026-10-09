@@ -6,6 +6,7 @@ must carry a UTC offset so they can be normalized safely.
 """
 from __future__ import annotations
 
+import gzip
 import os
 import re
 import xml.etree.ElementTree as ET
@@ -29,13 +30,20 @@ def _text(element: ET.Element | None, fallback: str = "") -> str:
     return (element.text or "").strip() if element is not None else fallback
 
 
-def load_us_programmes(path: str | Path, *, limit_channels: int = 12) -> list[dict[str, Any]]:
-    """Read XMLTV channel/programme data and return normalized US-English rows.
+def load_us_programmes(
+    path: str | Path, *, limit_channels: int = 12,
+    preferred_channel_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Read plain or gzip-compressed XMLTV and return normalized guide rows.
 
-    This intentionally preserves only useful guide fields. Schedule-source
-    selection and licence verification remain the deployer's responsibility.
+    If preferred_channel_ids is set, only those source IDs are retained and
+    their order is used. Otherwise the first limit_channels are retained.
+    This keeps multi-thousand-channel guides from overwhelming the Wii UI.
     """
-    root = ET.parse(path).getroot()
+    xml_path = Path(path).expanduser()
+    opener = gzip.open if xml_path.suffix.lower() == ".gz" else open
+    with opener(xml_path, "rb") as stream:
+        root = ET.parse(stream).getroot()
     names: dict[str, str] = {}
     for channel in root.findall("channel"):
         channel_id = channel.attrib.get("id", "").strip()
@@ -48,7 +56,13 @@ def load_us_programmes(path: str | Path, *, limit_channels: int = 12) -> list[di
         if name:
             names[channel_id] = name[:80]
 
-    ordered_ids = list(names)[:limit_channels]
+    if preferred_channel_ids:
+        ordered_ids = [
+            channel_id for channel_id in preferred_channel_ids
+            if channel_id in names
+        ]
+    else:
+        ordered_ids = list(names)[:limit_channels]
     allowed = set(ordered_ids)
     programmes: list[dict[str, Any]] = []
     for element in root.findall("programme"):
@@ -93,7 +107,14 @@ def configured_us_programmes() -> list[dict[str, Any]] | None:
     xml_path = Path(path).expanduser()
     if not xml_path.is_file():
         return None
+    preferred_ids = [
+        item.strip()
+        for item in os.environ.get("TV_GUIDE_CHANNEL_IDS", "").split(",")
+        if item.strip()
+    ]
     try:
-        return load_us_programmes(xml_path)
+        return load_us_programmes(
+            xml_path, preferred_channel_ids=preferred_ids or None
+        )
     except (ET.ParseError, OSError, ValueError):
         return None
