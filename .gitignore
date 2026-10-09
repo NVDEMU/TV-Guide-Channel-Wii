@@ -18,3 +18,8 @@ wii/tv-guide-usa.dol
 wii/tv-guide-usa.elf
 wii/tv-guide-usa.map
 build/
+
+# User-owned Wii title packages/credentials; never commit local base/output files
+*.wad
+*.tik
+*.cert
