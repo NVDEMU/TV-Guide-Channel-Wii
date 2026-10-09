@@ -7,6 +7,12 @@ on:
   schedule:
     - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      build_native_preview:
+        description: "Download and patch the original TV no Tomo title into a short-lived native-UI preview (NUS access required)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -122,6 +128,7 @@ jobs:
           python tools/prepare_wad_tool.py .tools/WadPakk
           dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release
           dotnet build tools/wad-assets/WadAssetExtractor.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
+          dotnet build tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
 
       - name: Package WAD without a user-supplied base
         env:
@@ -202,6 +209,49 @@ jobs:
             dist/guide-files/source-status.json
             dist/wad/TV-Guide-USA.wad
             dist/wad/TV-Guide-USA-Dolphin-Test-Kit.zip
+
+  native-ui-preview:
+    name: Build native TV no Tomo UI localization preview
+    if: github.event_name == 'workflow_dispatch' && inputs.build_native_preview
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python for WAD structural validation
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Download tooling and build the native localization patcher
+        run: |
+          mkdir -p .tools
+          git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
+          python tools/prepare_wad_tool.py .tools/WadPakk
+          dotnet build tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
+
+      - name: Download latest original TV no Tomo title from NUS and localize its native UI
+        env:
+          WADPAKK_DIR: ${{ github.workspace }}/.tools/WadPakk
+        run: |
+          mkdir -p build
+          dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --download-latest "$PWD/build/TV-Guide-USA-Native-UI-Preview.wad" "$PWD/translations/native-english-messages.json"
+          python tools/inspect_wad.py build/TV-Guide-USA-Native-UI-Preview.wad
+
+      - name: Upload one-day native UI preview for Dolphin testing
+        uses: actions/upload-artifact@v6
+        with:
+          name: tv-guide-usa-native-ui-preview-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            build/TV-Guide-USA-Native-UI-Preview.wad
 
   wad-tools-check:
     name: Validate guide and WAD packaging tools
