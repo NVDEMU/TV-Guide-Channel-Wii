@@ -344,6 +344,13 @@ internal static class Program
                 messageCount = file.Messages.Count,
                 controlTagMessages = file.Messages.Count(message => message.ControlTagCount > 0)
             }),
+            allMessages = snapshots.SelectMany(file => file.Messages.Select(message => new
+            {
+                file = file.ResourceName,
+                index = message.Index,
+                source = message.Text,
+                controlTagCount = message.ControlTagCount
+            })),
             translationCandidates = candidates,
             unmatchedTranslationKeys = translations.Keys.Where(key => !matchedKeys.Contains(key)).OrderBy(key => key),
             resourceErrors
