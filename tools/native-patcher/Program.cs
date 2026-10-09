@@ -65,6 +65,31 @@ internal static class Program
                 return 0;
             }
 
+            if (args[0] == "--download-diagnostics")
+            {
+                if (args.Length < 3) { PrintUsage(); return 2; }
+                string fullOutput = Path.GetFullPath(args[1]);
+                string metadataOutput = Path.GetFullPath(args[2]);
+                string translationsPath = args.Length > 3
+                    ? Path.GetFullPath(args[3])
+                    : Path.Combine(AppContext.BaseDirectory, "native-english-messages.json");
+                string downloadDirectory = Path.Combine(Path.GetTempPath(), "tv-guide-diagnostic-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(downloadDirectory);
+                try
+                {
+                    string originalWad = DownloadOriginalTitle(downloadDirectory);
+                    PatchTitle(originalWad, metadataOutput, translationsPath, translateMessages: false);
+                    PatchTitle(originalWad, fullOutput, translationsPath, translateMessages: true);
+                    return 0;
+                }
+                finally
+                {
+                    try { Directory.Delete(downloadDirectory, recursive: true); }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                }
+            }
+
             if (args[0] == "--download-latest")
             {
                 if (args.Length < 2)
@@ -119,6 +144,7 @@ internal static class Program
         Console.WriteLine("Native TV no Tomo UI localization preview");
         Console.WriteLine("  native-title-patcher <input.wad> <output.wad> [translation.json]");
         Console.WriteLine("  native-title-patcher --download-latest <output.wad> [translation.json]");
+        Console.WriteLine("  native-title-patcher --download-diagnostics <full-preview.wad> <metadata-only.wad> [translation.json]");
         Console.WriteLine("  native-title-patcher --audit <input.wad> <report.json> [translation.json]");
         Console.WriteLine("  native-title-patcher --audit-latest <report.json> [translation.json]");
         Console.WriteLine("  native-title-patcher --self-test");
@@ -161,18 +187,22 @@ internal static class Program
             "The service may have removed the title. Details: " + string.Join(" | ", failures));
     }
 
-    private static void PatchTitle(string input, string output, string translationsPath)
+    private static void PatchTitle(string input, string output, string translationsPath, bool translateMessages = true)
     {
         input = Path.GetFullPath(input);
         output = Path.GetFullPath(output);
         translationsPath = Path.GetFullPath(translationsPath);
         if (!File.Exists(input)) throw new FileNotFoundException("Input WAD was not found.", input);
-        if (!File.Exists(translationsPath)) throw new FileNotFoundException("Translation resource was not found.", translationsPath);
+        if (translateMessages && !File.Exists(translationsPath))
+            throw new FileNotFoundException("Translation resource was not found.", translationsPath);
 
-        using JsonDocument json = JsonDocument.Parse(File.ReadAllText(translationsPath));
         var translations = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (JsonProperty item in json.RootElement.EnumerateObject())
-            translations[item.Name] = item.Value.GetString() ?? string.Empty;
+        if (translateMessages)
+        {
+            using JsonDocument json = JsonDocument.Parse(File.ReadAllText(translationsPath));
+            foreach (JsonProperty item in json.RootElement.EnumerateObject())
+                translations[item.Name] = item.Value.GetString() ?? string.Empty;
+        }
 
         using WAD wad = WAD.Load(input);
         ulong expectedTitleId = Convert.ToUInt64(OriginalTitleId, 16);
@@ -185,58 +215,56 @@ internal static class Program
         int patchedMessages = 0;
         int patchedArchives = 0;
 
-        // Preserve and localize any banner-app text resources without changing its
-        // original banner animation, layout or art. ChannelTitles below updates the
-        // built-in Wii Menu title strings for every locale.
-        U8 bannerApp = wad.BannerApp;
-        int bannerTextChanges = PatchU8Archive(
-            bannerApp, "banner-app", translations, patchedNames, discoveredBmgFiles, 0);
-        if (bannerTextChanges > 0) patchedArchives++;
-        patchedMessages += bannerTextChanges;
-
-        // Scan every title content for U8 archives, not just one assumed index.
-        // This finds main guide UI, settings, TV remote, errors, tips and support strings.
-        foreach (var entry in wad.TmdContents.Where(item => item.Index != 0).ToArray())
+        if (translateMessages)
         {
-            byte[] bytes;
-            try { bytes = wad.GetContentByIndex(entry.Index); }
-            catch { continue; }
+            U8 bannerApp = wad.BannerApp;
+            int bannerTextChanges = PatchU8Archive(
+                bannerApp, "banner-app", translations, patchedNames, discoveredBmgFiles, 0);
+            if (bannerTextChanges > 0) patchedArchives++;
+            patchedMessages += bannerTextChanges;
 
-            if (!CanLoadU8(bytes)) continue;
-            using U8 archive = U8.Load(bytes);
-            int changed = PatchU8Archive(
-                archive, $"{entry.Index:X4}", translations, patchedNames, discoveredBmgFiles, 0);
-            if (changed == 0) continue;
+            // Keep the original DOL and only replace content archives that actually
+            // contain a translated U8/BMG resource. The control build skips this loop.
+            foreach (var entry in wad.TmdContents.Where(item => item.Index != 0).ToArray())
+            {
+                byte[] bytes;
+                try { bytes = wad.GetContentByIndex(entry.Index); }
+                catch { continue; }
 
-            int contentPosition = Array.FindIndex(wad.TmdContents, item => item.Index == entry.Index);
-            ReplaceContent(wad, contentPosition, archive.ToByteArray());
-            patchedMessages += changed;
-            patchedArchives++;
+                if (!CanLoadU8(bytes)) continue;
+                using U8 archive = U8.Load(bytes);
+                int changed = PatchU8Archive(
+                    archive, $"{entry.Index:X4}", translations, patchedNames, discoveredBmgFiles, 0);
+                if (changed == 0) continue;
+
+                int contentPosition = Array.FindIndex(wad.TmdContents, item => item.Index == entry.Index);
+                ReplaceContent(wad, contentPosition, archive.ToByteArray());
+                patchedMessages += changed;
+                patchedArchives++;
+            }
+
+            if (patchedMessages == 0)
+                throw new InvalidDataException(
+                    "No native UI strings were translated. The supplied title's BMG files or translation indices may have changed.");
         }
 
-        if (patchedMessages == 0)
-            throw new InvalidDataException(
-                "No native UI strings were translated. The supplied title's BMG files or translation indices may have changed.");
-
-        // Preserve the original app, BRLYT/BRLAN layout and animation resources,
-        // textures, sound, controls and native executable. Only supported message
-        // tables and Wii Menu title metadata change in this preview.
-        // Keep the original title identity and region in this diagnostic build.
-        // The native executable may rely on its original title ID; changing it at
-        // the same time as its resources makes launch failures much harder to isolate.
-        // Because the title ID is retained, install this preview only in a separate
-        // Dolphin NAND so it cannot overwrite an existing TV no Tomo installation.
+        // Both diagnostics retain the original title ID and region. The metadata-only
+        // output changes only the Wii Menu's eight locale strings; the translated
+        // output also rebuilds the matched BMG files. Comparing them isolates whether
+        // message/archive modifications cause the black screen.
         wad.ChannelTitles = EnglishTitles;
         wad.FakeSign = true;
 
         string? outputDirectory = Path.GetDirectoryName(output);
         if (!string.IsNullOrEmpty(outputDirectory)) Directory.CreateDirectory(outputDirectory);
         wad.Save(output);
+        ValidateSavedWad(output, expectedTitleId);
 
         Console.WriteLine(JsonSerializer.Serialize(new
         {
             source = Path.GetFileName(input),
             output,
+            mode = translateMessages ? "full-message-translation" : "title-metadata-only-control",
             originalTitleId = OriginalTitleId,
             outputTitleId = wad.TitleID.ToString("X16"),
             region = wad.Region.ToString(),
@@ -248,8 +276,29 @@ internal static class Program
             localizedMenuTitleAllLanguages = true,
             preservedNativeExecutable = true,
             preservedOriginalBannerAnimationAndArtwork = true,
-            warning = "This is a partial native-UI localization preview. Some Japanese messages may remain and original guide-service requests are not yet redirected to the US guide backend."
+            warning = translateMessages
+                ? "Full translation preview. If this shows black but the metadata-only control boots, one of the BMG/U8 replacements is responsible."
+                : "Metadata-only control: original message archives and executable remain unmodified."
         }, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static void ValidateSavedWad(string path, ulong expectedTitleId)
+    {
+        using WAD saved = WAD.Load(path);
+        if (saved.TitleID != expectedTitleId)
+            throw new InvalidDataException("Saved WAD title ID changed unexpectedly.");
+
+        using var sha1 = System.Security.Cryptography.SHA1.Create();
+        foreach (var item in saved.TmdContents)
+        {
+            byte[] content = saved.GetContentByIndex(item.Index);
+            if ((ulong)content.Length != item.Size)
+                throw new InvalidDataException($"Saved WAD content {item.Index} size does not match the TMD.");
+            byte[] hash = sha1.ComputeHash(content);
+            if (!hash.SequenceEqual(item.Hash))
+                throw new InvalidDataException($"Saved WAD content {item.Index} SHA-1 does not match the TMD.");
+        }
+        Console.WriteLine($"WAD reopen/content-hash validation passed: {Path.GetFileName(path)}");
     }
 
     private static void WriteNativeAudit(string input, string reportPath, string translationsPath)
