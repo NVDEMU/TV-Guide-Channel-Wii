@@ -26,6 +26,94 @@ internal static class BmgTranslator
         }
     }
 
+    public sealed record MessageSnapshot(int Index, string Text, bool HasControlTags);
+    public sealed record FileSnapshot(string ResourceName, byte EncodingId, int EntrySize, IReadOnlyList<MessageSnapshot> Messages);
+
+    public static FileSnapshot Inspect(byte[] original, string resourceName)
+    {
+        byte[] source = Headers.DetectHeader(original) == Headers.HeaderType.IMD5
+            ? Headers.IMD5.RemoveHeader(original)
+            : original;
+        if (source.Length < 0x20 || !source.AsSpan(0, 8).SequenceEqual("MESGbmg1"u8))
+            throw new InvalidDataException($"{resourceName}: resource is not a BMG file.");
+
+        int totalSize = checked((int)ReadU32(source, 8));
+        if (totalSize < 0x20 || totalSize > source.Length)
+            throw new InvalidDataException($"{resourceName}: BMG file size is invalid.");
+        byte encodingId = source[0x10];
+        Encoding encoding = ResolveEncoding(encodingId);
+        bool isUtf16 = encodingId == 2;
+        int sectionCount = checked((int)ReadU32(source, 12));
+        int position = 0x20;
+        byte[]? inf = null;
+        byte[]? dat = null;
+        for (int i = 0; i < sectionCount; i++)
+        {
+            if (position + 8 > totalSize) throw new InvalidDataException($"{resourceName}: section header is truncated.");
+            string sectionName = Encoding.ASCII.GetString(source, position, 4);
+            int size = checked((int)ReadU32(source, position + 4));
+            if (size < 8 || position + size > totalSize) throw new InvalidDataException($"{resourceName}: invalid section size.");
+            byte[] section = source.AsSpan(position, size).ToArray();
+            if (sectionName == "INF1") inf = section;
+            if (sectionName == "DAT1") dat = section;
+            position += size;
+        }
+        if (inf is null || dat is null || inf.Length < 16 || dat.Length < 8)
+            throw new InvalidDataException($"{resourceName}: missing or truncated INF1/DAT1 section.");
+
+        int messageCount = ReadU16(inf, 8);
+        int entrySize = ReadU16(inf, 10);
+        if (entrySize < 4 || 16L + (long)messageCount * entrySize > inf.Length)
+            throw new InvalidDataException($"{resourceName}: unsupported INF1 entry table.");
+        var messages = new List<MessageSnapshot>(messageCount);
+        for (int i = 0; i < messageCount; i++)
+        {
+            uint offset = ReadU32(inf, 16 + i * entrySize);
+            int start = checked(8 + (int)offset);
+            int end = FindTerminator(dat, start, isUtf16);
+            byte[] raw = dat.AsSpan(start, end - start).ToArray();
+            List<byte[]> tags = ExtractControlTags(raw, isUtf16);
+            messages.Add(new MessageSnapshot(i, DecodeMessage(raw, encoding, isUtf16), tags.Count > 0));
+        }
+        return new FileSnapshot(resourceName, encodingId, entrySize, messages);
+    }
+
+    private static string DecodeMessage(byte[] message, Encoding encoding, bool isUtf16)
+    {
+        int step = isUtf16 ? 2 : 1;
+        int cursor = 0;
+        int tagIndex = 0;
+        var result = new StringBuilder();
+        while (cursor < message.Length)
+        {
+            bool isTag = isUtf16
+                ? cursor + 2 <= message.Length && ReadU16(message, cursor) == 0x001A
+                : message[cursor] == 0x1A;
+            if (!isTag)
+            {
+                int next = cursor + step;
+                while (next < message.Length)
+                {
+                    bool nextIsTag = isUtf16
+                        ? next + 2 <= message.Length && ReadU16(message, next) == 0x001A
+                        : message[next] == 0x1A;
+                    if (nextIsTag) break;
+                    next += step;
+                }
+                result.Append(encoding.GetString(message, cursor, next - cursor));
+                cursor = next;
+                continue;
+            }
+
+            int lenOffset = cursor + step;
+            int tagLength = message[lenOffset];
+            result.Append($"#{tagIndex:00}");
+            tagIndex++;
+            cursor += tagLength;
+        }
+        return result.ToString();
+    }
+
     public static byte[] Translate(byte[] original, string fileName, IReadOnlyDictionary<string, string> translations, out int count)
     {
         count = 0;
