@@ -312,93 +312,52 @@ internal static class Program
 
     private static void ValidateSavedWad(string path, ulong expectedTitleId)
     {
-        int[] repairedIndices;
-        using (WAD saved = WAD.Load(path))
-        {
-            if (saved.TitleID != expectedTitleId)
-                throw new InvalidDataException("Saved WAD title ID changed unexpectedly.");
-            if (!saved.HasBanner)
-                throw new InvalidDataException("Saved WAD banner container could not be parsed.");
+        var integrityWarnings = new List<string>();
+        using WAD verified = LoadWadWithIntegrityWarnings(path, integrityWarnings);
 
-            using var sha1 = System.Security.Cryptography.SHA1.Create();
-            var repairable = new List<(TMD_Content Item, byte[] Hash)>();
-            var badNonBanner = new List<int>();
-            foreach (var item in saved.TmdContents)
-            {
-                byte[] content = saved.GetContentByIndex(item.Index);
-                if ((ulong)content.Length != item.Size)
-                    throw new InvalidDataException($"Saved WAD content {item.Index} size does not match the TMD.");
-                byte[] hash = sha1.ComputeHash(content);
-                if (hash.SequenceEqual(item.Hash)) continue;
-                if (item.Index == 0) repairable.Add((item, hash));
-                else badNonBanner.Add(item.Index);
-            }
-
-            if (badNonBanner.Count > 0)
-                throw new InvalidDataException(
-                    "Saved WAD content SHA-1 mismatch for non-banner indices: " +
-                    string.Join(", ", badNonBanner));
-
-            repairedIndices = repairable.Select(item => (int)item.Item.Index).ToArray();
-            if (repairable.Count > 0)
-            {
-                foreach (var item in repairable)
-                    item.Item.Hash = item.Hash;
-
-                FieldInfo tmdField = typeof(WAD).GetField("tmd", BindingFlags.Instance | BindingFlags.NonPublic)
-                    ?? throw new MissingFieldException("Could not access the in-memory TMD to repair its banner hash.");
-                if (tmdField.GetValue(saved) is not TMD tmd)
-                    throw new InvalidDataException("The saved WAD TMD object has an unexpected type.");
-
-                tmd.FakeSign = true;
-                byte[] tmdBytes = tmd.ToByteArray(true);
-                byte[] wadBytes = File.ReadAllBytes(path);
-                int expectedTmdSize = checked((int)ReadBeU32(wadBytes, 20));
-                if (tmdBytes.Length != expectedTmdSize)
-                    throw new InvalidDataException("Rebuilt TMD size does not match the WAD header.");
-                int tmdOffset = FindTmdOffset(wadBytes);
-                if (tmdOffset < 0 || tmdOffset + tmdBytes.Length > wadBytes.Length)
-                    throw new InvalidDataException("TMD section lies outside the WAD.");
-
-                Array.Copy(tmdBytes, 0, wadBytes, tmdOffset, tmdBytes.Length);
-                File.WriteAllBytes(path, wadBytes);
-                Console.WriteLine("Repaired banner TMD hash without changing banner content bytes.");
-            }
-        }
-
-        using WAD verified = WAD.Load(path);
         if (verified.TitleID != expectedTitleId)
-            throw new InvalidDataException("Repaired WAD title ID changed unexpectedly.");
-        using var finalSha1 = System.Security.Cryptography.SHA1.Create();
-        foreach (var item in verified.TmdContents)
+            throw new InvalidDataException("Saved WAD title ID changed unexpectedly.");
+        if (!verified.HasBanner)
+            throw new InvalidDataException("Saved WAD banner container could not be parsed.");
+
+        if (integrityWarnings.Count > 0)
+            throw new InvalidDataException(
+                "libWiiSharp reported a content/header integrity warning while reopening the WAD:\n" +
+                string.Join("\n", integrityWarnings));
+
+        // Important: libWiiSharp's IMET parser zeroes its cached IMET hash field
+        // after checking it. Consequently, hashing GetContentByIndex(0) after
+        // WAD.LoadFile can report a false mismatch. Subscribe before parsing so
+        // WAD's own SHA-1 checks are observed at the correct, pre-mutation point.
+        Console.WriteLine(
+            $"WAD reopen/integrity validation passed: {Path.GetFileName(path)} " +
+            "(original title ID retained; no post-parse cached-buffer rehash).");
+    }
+
+    private static WAD LoadWadWithIntegrityWarnings(string path, List<string> integrityWarnings)
+    {
+        var wad = new WAD();
+        wad.Warning += (_, args) =>
         {
-            byte[] content = verified.GetContentByIndex(item.Index);
-            byte[] actual = finalSha1.ComputeHash(content);
-            if ((ulong)content.Length != item.Size || !actual.SequenceEqual(item.Hash))
-                throw new InvalidDataException(
-                    $"Saved WAD content index {item.Index} still fails SHA-1 validation. " +
-                    $"TMD={Convert.ToHexString(item.Hash)} actual={Convert.ToHexString(actual)} size={content.Length}.");
+            string message = args.Message ?? string.Empty;
+            if (message.Contains("hash", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("corrupt", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("doesn't match", StringComparison.OrdinalIgnoreCase))
+            {
+                integrityWarnings.Add(message);
+            }
+        };
+
+        try
+        {
+            wad.LoadFile(path);
+            return wad;
         }
-        Console.WriteLine($"WAD reopen/content-hash validation passed: {Path.GetFileName(path)}; repaired indices={string.Join(",", repairedIndices)}");
-    }
-
-    private static int FindTmdOffset(byte[] wad)
-    {
-        const int alignment = 0x40;
-        int cursor = Align(0x20, alignment);
-        cursor = Align(checked(cursor + (int)ReadBeU32(wad, 8)), alignment);
-        cursor = Align(checked(cursor + (int)ReadBeU32(wad, 12)), alignment);
-        cursor = Align(checked(cursor + (int)ReadBeU32(wad, 16)), alignment);
-        return cursor;
-    }
-
-    private static int Align(int value, int alignment) => checked((value + alignment - 1) & ~(alignment - 1));
-
-    private static uint ReadBeU32(byte[] bytes, int offset)
-    {
-        if (offset < 0 || offset + 4 > bytes.Length)
-            throw new InvalidDataException("WAD header field is outside the file.");
-        return System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(offset, 4));
+        catch
+        {
+            wad.Dispose();
+            throw;
+        }
     }
 
     private static void WriteNativeAudit(string input, string reportPath, string translationsPath)
