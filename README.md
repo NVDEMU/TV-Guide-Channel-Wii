@@ -10,7 +10,9 @@
 - `wii/` — native PowerPC/libogc channel frontend, built as a Wii DOL.
 - `tests/` — API and parser tests.
 - `channel-assets/` — instructions for creating US-English Wii banner and icon U8 archives.
-- `tools/package-wad.sh` — local WAD packaging script using WadPakk and a compatible base WAD you are authorized to use.
+- `tools/inspect_wad.py` — validates the local WAD envelope and reads title/region/content metadata.
+- `tools/package-wad.sh` — local WAD packaging script using the supplied Japanese base WAD, automatic banner/icon extraction fallback, and WadPakk.
+- `tools/wad-assets/` — helper to extract the banner/icon archives from the base WAD.
 - `docs/PROTOCOL-RESEARCH.md` — research into TV no Tomo's original guide-file formats.
 
 ## Features in this prototype
@@ -82,21 +84,22 @@ Controls: D-pad Up/Down selects channels; Left/Right selects programmes; A opens
 
 ## 4. Package a WAD
 
-A DOL executable is not by itself an installable Wii Menu channel. To create a WAD, you also need valid Wii channel metadata/banner content. This repo deliberately does not store Nintendo channel binaries, Wii common keys, tickets, NAND backups, or a base WAD.
+A DOL executable is not by itself an installable Wii Menu channel. The packaging script can use your local `TV no Toma (Japan) (Channel).wad` as the base, validate it, and extract its existing U8 banner/icon archives when custom English archives are not supplied. This repo deliberately does not store Nintendo channel binaries, Wii common keys, tickets, NAND backups, or a base WAD.
 
 See [docs/WAD-BUILD.md](docs/WAD-BUILD.md) and [channel-assets/README.md](channel-assets/README.md). The packaging script needs:
 
 - A built `wii/tv-guide-usa.dol`.
-- A compatible base WAD you are authorized to use.
-- `channel-assets/banner.bin` and `channel-assets/icon.bin`, valid U8 banner/icon archives exported from a Wii channel banner editor.
-- The .NET 8 SDK and network access to clone the open-source WadPakk build tool.
+- Your local base WAD, passed as `TV_GUIDE_BASE_WAD` or named `TV no Toma (Japan) (Channel).wad` in the repo root or `~/Wii`.
+- Python 3, Git, and the .NET 8 SDK. The script extracts the base WAD's current banner/icon files by default; custom English archives can be supplied through `TV_GUIDE_BANNER_BIN` and `TV_GUIDE_ICON_BIN`.
 
 Example:
 
 ```sh
-TV_GUIDE_BASE_WAD="$HOME/Wii/my-base.wad" \
+TV_GUIDE_BASE_WAD="$HOME/Wii/TV no Toma (Japan) (Channel).wad" \
   bash tools/package-wad.sh
 ```
+
+The output channel gets the `TVG1` title ID and USA TMD region. Without custom English banner/icon files, the WAD's menu artwork remains the original artwork even though the channel title and homebrew UI are English.
 
 Override the banner/icon paths with `TV_GUIDE_BANNER_BIN` and `TV_GUIDE_ICON_BIN` if necessary. The output is `build/TV-Guide-USA.wad`. The base WAD and exported binary assets remain local/ignored rather than being committed. The workflow does not publish a WAD automatically because these inputs are user-owned/local and have not been supplied to CI.
 
