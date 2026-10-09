@@ -7,3 +7,14 @@ venv/
 .coverage
 htmlcov/
 .DS_Store
+
+# Local toolchains and packaging inputs
+.tools/
+keys/
+channel-assets/*.wad
+channel-assets/*.bin
+wii/build/
+wii/tv-guide-usa.dol
+wii/tv-guide-usa.elf
+wii/tv-guide-usa.map
+build/
