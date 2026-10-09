@@ -255,9 +255,21 @@ internal static class BmgTranslator
 
         if (controlTags.Count == 0)
         {
-            // A placeholder suggests a runtime field. Do not emit a visible "#00"
-            // if its corresponding native control tag was not present in the source.
-            if (matches.Count > 0)
+            // TV no Tomo also uses literal #00/#01/#02 text placeholders that the
+            // executable substitutes at runtime. Only preserve translations whose
+            // placeholder set matches the source message exactly.
+            int[] sourcePlaceholders = PlaceholderPattern.Matches(encoding.GetString(originalMessage))
+                .Cast<Match>()
+                .Select(match => int.Parse(match.Groups["index"].Value))
+                .Distinct()
+                .OrderBy(index => index)
+                .ToArray();
+            int[] targetPlaceholders = matches.Cast<Match>()
+                .Select(match => int.Parse(match.Groups["index"].Value))
+                .Distinct()
+                .OrderBy(index => index)
+                .ToArray();
+            if (!sourcePlaceholders.SequenceEqual(targetPlaceholders))
             {
                 result = originalMessage;
                 return false;
