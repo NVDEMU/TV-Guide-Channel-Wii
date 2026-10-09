@@ -217,14 +217,8 @@ internal static class Program
 
         if (translateMessages)
         {
-            U8 bannerApp = wad.BannerApp;
-            int bannerTextChanges = PatchU8Archive(
-                bannerApp, "banner-app", translations, patchedNames, discoveredBmgFiles, 0);
-            if (bannerTextChanges > 0) patchedArchives++;
-            patchedMessages += bannerTextChanges;
-
-            // Keep the original DOL and only replace content archives that actually
-            // contain a translated U8/BMG resource. The control build skips this loop.
+            // The scanned native UI BMG files are in regular title content, not
+            // the banner-app container. Keep content 0's U8 body untouched below.
             foreach (var entry in wad.TmdContents.Where(item => item.Index != 0).ToArray())
             {
                 byte[] bytes;
@@ -248,17 +242,14 @@ internal static class Program
                     "No native UI strings were translated. The supplied title's BMG files or translation indices may have changed.");
         }
 
-        // Both diagnostics retain the original title ID and region. The metadata-only
-        // output changes only the Wii Menu's eight locale strings; the translated
-        // output also rebuilds the matched BMG files. Comparing them isolates whether
-        // message/archive modifications cause the black screen.
-        wad.ChannelTitles = EnglishTitles;
+        // Both diagnostics retain the original title ID and region. libWiiSharp's
+        // normal Save path reserializes the entire banner U8 and has produced a
+        // content-0 SHA-1 mismatch in CI. Patch only the 0x640-byte IMET header in the
+        // original byte array, then bypass banner-app serialization so every image,
+        // layout and inner compressed stream remains byte-for-byte unchanged.
+        PatchImetTitlesPreservingArchive(wad);
+        DisableBannerArchiveReserialization(wad);
         wad.FakeSign = true;
-        // We do not edit the banner/icon images. libWiiSharp defaults to re-compressing
-        // those inner files on every save; preserve their original bytes instead, since
-        // the previous preview's content-0 SHA-1 check failed after that round-trip.
-        wad.Lz77CompressBannerAndIcon = false;
-        wad.Lz77DecompressBannerAndIcon = false;
 
         string? outputDirectory = Path.GetDirectoryName(output);
         if (!string.IsNullOrEmpty(outputDirectory)) Directory.CreateDirectory(outputDirectory);
