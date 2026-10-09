@@ -6,7 +6,9 @@
 
 ## Project components
 
-- `backend/` — FastAPI guide API, XMLTV ingestion, and a simple Wii-friendly text endpoint.
+- `backend/` — FastAPI guide API, plain/gzip XMLTV ingestion, and a Wii-friendly text endpoint.
+- `config/tv-guide-sources.json` — catalogue of public, account-based, personal-use, and commercial guide-source candidates, including known usage caveats.
+- `tools/build_tvmaze_guide.py` — pulls the attributed TVmaze US schedule and generates compact timezone guide snapshots for the DOL and SD card.
 - `wii/` — native PowerPC/libogc channel frontend, built as a Wii DOL.
 - `tests/` — API and parser tests.
 - `channel-assets/` — instructions for creating US-English Wii banner and icon U8 archives.
@@ -21,7 +23,10 @@
 - Channel selection, programme listing, programme details, and refresh control.
 - US Eastern, Central, Mountain, and Pacific time-zone switching.
 - Backend supports user-provided XMLTV files for guide schedules.
-- Synthetic demo schedule when no source file is configured, clearly labelled `DEMO`.
+- Synthetic demo schedule when no real source snapshot is available, clearly labelled `DEMO`.
+- A compact TVmaze US schedule snapshot embedded in development builds, with TVmaze CC BY-SA attribution displayed in the channel. TVmaze data is episode-centric, not a complete local-affiliate lineup.
+- Offline snapshot and optional SD-card guide loading, so the DOL can be tested in Dolphin without a local Python server.
+- A growing provider catalogue: US-EPG, USA Locals, EPGTalk, EPGShare, Open-EPG, epg.pw, IPTV-EPG.org, iptv-org, i.mjh.nz FAST-channel feeds, Schedules Direct, TV Media and Gracenote.
 - Wii frontend can read its backend IPv4 address/port and default time zone from SD-card configuration.
 - GitHub Actions workflow builds the native Wii DOL and uploads it as an Actions artifact.
 - Local WAD package script uses title ID `TVG1` and channel title `TV Guide USA`.
@@ -52,14 +57,14 @@ The Wii text protocol is custom to this project. It has **not** been confirmed a
 
 ## 2. Add real US guide schedules
 
-This repository does not include a TV listings feed. Obtain an XMLTV file from a provider whose terms allow your intended use and redistribution/caching. Set the environment variable to that file before starting the API:
+The default build uses TVmaze's public US schedule API under its documented CC BY-SA licence. It is a compact build-time snapshot rather than a full local affiliate grid. For a different provider, obtain data whose terms permit your use and set `TV_GUIDE_XMLTV_PATH` to a plain or gzip-compressed XMLTV file before starting the API:
 
 ```sh
 TV_GUIDE_XMLTV_PATH="/absolute/path/to/us-guide.xml" \
   uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-The importer reads English display names/titles where available, validates offset-aware XMLTV timestamps, and skips malformed programme entries. If the file is not configured or cannot be read, the API deliberately falls back to synthetic demo listings. Configure an automated feed refresh separately if you need schedules to stay up to date.
+The importer reads English display names/titles where available, supports `.xml` and `.xml.gz`, validates offset-aware XMLTV timestamps, and skips malformed programme entries. Set optional `TV_GUIDE_CHANNEL_IDS` to a comma-separated list of channel IDs from your chosen feed to select the desired stations; otherwise the importer takes the first 12 channels. If no source is configured or it cannot be read, the API deliberately falls back to synthetic demo listings.
 
 ## 3. Build the native Wii frontend
 
@@ -80,7 +85,7 @@ sd:/apps/tv-guide-channel-wii/config.ini
 
 Change `server=` to the computer's LAN IPv4 address, for example `192.168.1.25`. The default port is `8000`. The channel currently uses **plain HTTP for local-network development only**; do not expose this endpoint directly to the public internet. HTTPS/TLS support is a requirement before a public hosted service is considered ready.
 
-Controls: D-pad Up/Down selects channels; Left/Right selects programmes; A opens programme details; 1 refreshes; Plus cycles US time zones; HOME returns to the Wii Menu.
+Controls: D-pad Up/Down selects channels; Left/Right selects programmes; A opens programme details; 1 refreshes; Plus cycles US time zones; HOME returns to the Wii Menu. The channel prefers a configured server, then a matching guide file on the SD card, then the built-in snapshot. The offline snapshot means Dolphin testing does not require you to run Python locally.
 
 ## 4. Package a WAD
 
@@ -101,9 +106,20 @@ TV_GUIDE_BASE_WAD="$HOME/Wii/TV no Toma (Japan) (Channel).wad" \
 
 The output channel gets the `TVG1` title ID and USA TMD region. Without custom English banner/icon files, the WAD's menu artwork remains the original artwork even though the channel title and homebrew UI are English.
 
-Override the banner/icon paths with `TV_GUIDE_BANNER_BIN` and `TV_GUIDE_ICON_BIN` if necessary. The output is `build/TV-Guide-USA.wad`. The base WAD and exported binary assets remain local/ignored rather than being committed. The workflow does not publish a WAD automatically because these inputs are user-owned/local and have not been supplied to CI.
+Override the banner/icon paths with `TV_GUIDE_BANNER_BIN` and `TV_GUIDE_ICON_BIN` if necessary. The output is `build/TV-Guide-USA.wad`. The base WAD and exported binary assets remain local/ignored rather than being committed. The regular workflow publishes the DOL and its timezone snapshot files. To package a WAD without installing Python or .NET on your Mac, use the GitHub Actions route below.
 
 **Safety:** first test the DOL in Dolphin or via Homebrew Channel, then test the WAD in Dolphin. Installing malformed WADs can brick a Wii. Keep a verified NAND backup and brick-protection setup before installing a WAD on physical hardware. A successful compile is not proof of real-console functionality.
+
+## Build the WAD using GitHub Actions (no local Python required)
+
+1. Put a direct download URL for your own base WAD in the repository's **Settings → Secrets and variables → Actions → New repository secret**, named `TV_GUIDE_BASE_WAD_URL`. Use a private or short-lived URL that will remain valid for the workflow run; do not put the WAD itself in the public repo or commit a permanent public link.
+2. Open **Actions → Wii Channel Build → Run workflow**.
+3. Check **package_wad**, then run the workflow. It builds the DOL, fetches a TVmaze snapshot, downloads and validates your base WAD inside the runner, and packages the WAD there.
+4. Download the `tv-guide-usa-wad-<commit>` artifact from the workflow run. It contains `TV-Guide-USA.wad` and `TV-Guide-USA-Dolphin-Test-Kit.zip`.
+
+The test kit includes a DOL and four timezone-specific snapshot files for the SD path `sd:/apps/tv-guide-channel-wii/`. It is fine to test the WAD in Dolphin first; the WAD build is not automatically proof that it boots. The workflow does not expose the base WAD as a release asset.
+
+If you do not set the base-WAD URL secret, leave `package_wad` unchecked; the normal DOL build still succeeds and publishes the snapshot files.
 
 ## 5. Tests
 
