@@ -71,11 +71,11 @@ static void copy_text(char *destination, size_t size, const char *source) {
     if (size == 0) return;
     if (!source) source = "";
     size_t index = 0;
-    while (index + 1 < size && source[index] != '\\0') {
+    while (index + 1 < size && source[index] != '\0') {
         destination[index] = source[index];
         ++index;
     }
-    destination[index] = '\\0';
+    destination[index] = '\0';
 }
 
 static void initialise_video(void) {
