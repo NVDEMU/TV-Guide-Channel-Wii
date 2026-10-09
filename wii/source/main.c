@@ -49,6 +49,7 @@ typedef struct {
     int programme_count;
     char mode[8];
     char server[64];
+    char timezone[40];
     int port;
 } GuideState;
 
@@ -58,6 +59,13 @@ static GXRModeObj *video_mode;
 static int selected_channel;
 static int selected_programme;
 static bool show_details;
+static const char *US_TIMEZONES[] = {
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles"
+};
+static const int US_TIMEZONE_COUNT = 4;
 
 static void copy_text(char *destination, size_t size, const char *source) {
     if (size == 0) return;
@@ -83,6 +91,7 @@ static void initialise_video(void) {
 
 static void load_configuration(void) {
     copy_text(guide.server, sizeof(guide.server), DEFAULT_SERVER);
+    copy_text(guide.timezone, sizeof(guide.timezone), US_TIMEZONES[0]);
     guide.port = DEFAULT_PORT;
     copy_text(guide.mode, sizeof(guide.mode), "DEMO");
 
@@ -102,6 +111,13 @@ static void load_configuration(void) {
         } else if (strncmp(line, "port=", 5) == 0) {
             int port = atoi(line + 5);
             if (port > 0 && port <= 65535) guide.port = port;
+        } else if (strncmp(line, "timezone=", 9) == 0) {
+            for (int i = 0; i < US_TIMEZONE_COUNT; ++i) {
+                if (strcmp(line + 9, US_TIMEZONES[i]) == 0) {
+                    copy_text(guide.timezone, sizeof(guide.timezone), US_TIMEZONES[i]);
+                    break;
+                }
+            }
         }
     }
     fclose(file);
@@ -207,9 +223,9 @@ static bool fetch_guide(void) {
     char request[512];
     int request_length = snprintf(
         request, sizeof(request),
-        "GET /api/v1/wii/guide.txt?region=us HTTP/1.0\r\n"
+        "GET /api/v1/wii/guide.txt?region=us&timezone=%s HTTP/1.0\r\n"
         "Host: %s:%d\r\nAccept: text/plain\r\nConnection: close\r\n\r\n",
-        guide.server, guide.port);
+        guide.timezone, guide.server, guide.port);
     if (request_length <= 0 || request_length >= (int)sizeof(request) ||
         send(socket_fd, request, (size_t)request_length, 0) != request_length) {
         close(socket_fd);
@@ -314,8 +330,9 @@ static void draw_screen(void) {
     printf("                         TV GUIDE USA                          \n");
     printf("                   ENGLISH (UNITED STATES)                     \n");
     printf("===============================================================\n");
-    printf(" Source: %-4s   Server: %s:%d\n",
-           guide.mode, guide.server, guide.port);
+    printf(" Source: %-4s   Time zone: %-25.25s\n",
+           guide.mode, guide.timezone);
+    printf(" Server: %s:%d\n", guide.server, guide.port);
     printf("---------------------------------------------------------------\n");
     printf(" CHANNELS                        SCHEDULE\n");
     printf("                                 %-28.28s\n",
@@ -359,7 +376,8 @@ static void draw_screen(void) {
 
     printf("---------------------------------------------------------------\n");
     printf(" UP/DOWN: Channel   LEFT/RIGHT: Programme   A: Details\n");
-    printf(" 1: Refresh guide   B: Back   HOME: Return to Wii Menu\n");
+    printf(" 1: Refresh guide   PLUS: Cycle US time zone   B: Back\n");
+    printf(" HOME: Return to Wii Menu\n");
     if (strcmp(guide.mode, "DEMO") == 0) {
         printf(" DEMO MODE: sample data only; not real television listings.\n");
     }
@@ -428,6 +446,20 @@ int main(int argc, char **argv) {
         }
         if (buttons & WPAD_BUTTON_1) {
             printf("\x1b[2J\x1b[HRefreshing guide...\n");
+            if (!fetch_guide()) load_demo_guide();
+            selected_channel = 0;
+            selected_programme = 0;
+            show_details = false;
+            redraw = true;
+        }
+        if (buttons & WPAD_BUTTON_PLUS) {
+            int current_zone = 0;
+            for (int i = 0; i < US_TIMEZONE_COUNT; ++i) {
+                if (strcmp(guide.timezone, US_TIMEZONES[i]) == 0) current_zone = i;
+            }
+            current_zone = (current_zone + 1) % US_TIMEZONE_COUNT;
+            copy_text(guide.timezone, sizeof(guide.timezone), US_TIMEZONES[current_zone]);
+            printf("\x1b[2J\x1b[HRefreshing guide for %s...\n", guide.timezone);
             if (!fetch_guide()) load_demo_guide();
             selected_channel = 0;
             selected_programme = 0;
