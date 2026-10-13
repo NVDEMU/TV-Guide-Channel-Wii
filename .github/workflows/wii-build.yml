@@ -220,6 +220,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
+      - name: Set up Python for WAD tooling
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -284,11 +289,11 @@ jobs:
           python tools/inspect_wad.py build/TV-Guide-USA-Native-UI-Preview.wad
           python tools/inspect_wad.py build/TV-Guide-USA-Metadata-Only-Control.wad
 
-      - name: Upload one-day native UI preview for Dolphin testing
+      - name: Upload native UI preview for Dolphin testing
         uses: actions/upload-artifact@v6
         with:
           name: tv-guide-usa-native-ui-preview-${{ github.sha }}
-          retention-days: 1
+          retention-days: 7
           if-no-files-found: error
           path: |
             build/TV-Guide-USA-Native-UI-Preview.wad
