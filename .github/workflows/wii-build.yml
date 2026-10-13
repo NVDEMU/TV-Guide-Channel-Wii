@@ -3,6 +3,15 @@ name: Wii Channel Build
 on:
   push:
     branches: [main]
+    paths:
+      - ".github/workflows/wii-build.yml"
+      - "wii/**"
+      - "tools/**"
+      - "backend/**"
+      - "config/**"
+      - "translations/**"
+      - "tests/**"
+      - "requirements.txt"
   pull_request:
   schedule:
     - cron: "17 */6 * * *"
@@ -16,6 +25,11 @@ on:
 
 permissions:
   contents: write
+
+# Multiple rapid pushes must not concurrently overwrite the moving nightly release.
+concurrency:
+  group: tv-guide-channel-wii-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-guide-snapshot:
@@ -123,7 +137,7 @@ jobs:
       - name: Fetch and build WadPakk's bundled-template packager
         run: |
           mkdir -p .tools
-          git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
+          bash tools/fetch_wadpakk.sh .tools/WadPakk
           test -s .tools/WadPakk/Resources/base.wad
           python tools/prepare_wad_tool.py .tools/WadPakk
           dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release
@@ -233,7 +247,7 @@ jobs:
       - name: Fetch tooling and build native BMG inspector
         run: |
           mkdir -p .tools
-          git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
+          bash tools/fetch_wadpakk.sh .tools/WadPakk
           python tools/prepare_wad_tool.py .tools/WadPakk
           dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release
           dotnet build tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
@@ -276,7 +290,7 @@ jobs:
       - name: Download tooling and build the native localization patcher
         run: |
           mkdir -p .tools
-          git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
+          bash tools/fetch_wadpakk.sh .tools/WadPakk
           python tools/prepare_wad_tool.py .tools/WadPakk
           dotnet build tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
 
@@ -331,7 +345,7 @@ jobs:
       - name: Fetch the local WAD packager source
         run: |
           mkdir -p .tools
-          git clone --depth 1 https://github.com/davi-x86/WadPakk.git .tools/WadPakk
+          bash tools/fetch_wadpakk.sh .tools/WadPakk
           python tools/prepare_wad_tool.py .tools/WadPakk
 
       - name: Build portable WAD packager and asset extractor
