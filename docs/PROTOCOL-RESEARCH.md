@@ -28,3 +28,19 @@ Reference projects:
 ## Do not confuse the development API with the Wii protocol
 
 The endpoints implemented in `backend/main.py` are a modern JSON/XMLTV API created for this project. They intentionally do not claim to speak the Wii channel's original network protocol. An adapter will be needed once the protocol is established.
+
+## Native-preview black-screen finding (2026-10-13)
+
+The maintainer's Dolphin test of the metadata-only control WAD reports that the title launches, but the display remains black. The translated preview also showed a black screen. Therefore, the translated BMG/message archives are not established as the sole cause.
+
+The current native-title patcher deliberately keeps the original title executable and original service/network behavior. It changes the Wii Menu title metadata and, in full-preview mode, selected BMG message entries. It does not implement replacement guide requests, synthesize WiiConnect24 data, or alter the executable's startup path. A successful WAD parse/install is not evidence that the title initialized its video/UI.
+
+TV no Tomo's WiiConnect24 dependency is noted in [WiiLink's 2021 channel-status article](https://wiilink.ca/ca/news/status-of-wiilink24/) (historical research, not proof of current compatibility). Modern Dolphin builds have an **Enable WiiConnect24 via WiiLink** option; see the [Dolphin progress report from 2023](https://docs.dolphin-emu.org/blog/2023/08/13/dolphin-progress-report-may-june-and-july-2023/). That setting is an emulator diagnostic only; it does not restore TV no Tomo's discontinued guide service or add WiiLink branding to this project.
+
+### Next isolation steps
+
+1. In a separate fresh Dolphin user/NAND, compare the metadata-only control and an unmodified copy of the original Japanese title. Keep both separate from any existing installation because the preview intentionally retains TV no Tomo's original title ID.
+2. On a current Dolphin build, repeat the control test with **Settings → Wii → Enable WiiConnect24 via WiiLink** both disabled and enabled. Record the Dolphin version, whether audio plays, whether the Wii Remote stays connected, and the first relevant error/log lines.
+3. If both conditions stay black, collect Dolphin's log from a single launch and trace the title's IOS/KD/network initialization. The next code change should target the demonstrated hang or missing response, or replace the title startup path; changing more BMG translations is not a justified fix without new evidence.
+
+Do not claim the native UI is working until a visible menu is confirmed in Dolphin. Even after the menu renders, the original guide backend still needs a protocol-compatible replacement.
