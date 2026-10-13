@@ -248,23 +248,17 @@ jobs:
       - name: Fetch tooling and build native BMG inspector
         run: |
           mkdir -p .tools build
-          set -o pipefail
-          {
-            bash tools/fetch_wadpakk.sh .tools/WadPakk
-            python tools/prepare_wad_tool.py .tools/WadPakk
-            dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release
-            dotnet build tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk"
-            dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --self-test
-          } 2>&1 | tee "$PWD/build/native-ui-tools-build.log"
+          bash tools/fetch_wadpakk.sh .tools/WadPakk 2>&1 | tee "$PWD/build/native-ui-tools-build.log"
+          python tools/prepare_wad_tool.py .tools/WadPakk 2>&1 | tee -a "$PWD/build/native-ui-tools-build.log"
+          dotnet build .tools/WadPakk/WadPakk.csproj --configuration Release 2>&1 | tee -a "$PWD/build/native-ui-tools-build.log"
+          dotnet build tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" 2>&1 | tee -a "$PWD/build/native-ui-tools-build.log"
+          dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --self-test 2>&1 | tee -a "$PWD/build/native-ui-tools-build.log"
 
       - name: Inspect native TV no Tomo strings without exporting the original WAD
         run: |
           mkdir -p build
-          set -o pipefail
-          {
-            dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --audit-latest "$PWD/build/native-ui-audit.json" "$PWD/translations/native-english-messages.json"
-            python -c "import json; d=json.load(open('build/native-ui-audit.json')); print('BMG files:', d['fileCount']); print('candidate translations:', len(d['translationCandidates'])); print('unmatched candidate keys:', len(d['unmatchedTranslationKeys'])); print('resource parse errors:', len(d['resourceErrors']))"
-          } 2>&1 | tee "$PWD/build/native-ui-audit-build.log"
+          dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --audit-latest "$PWD/build/native-ui-audit.json" "$PWD/translations/native-english-messages.json" 2>&1 | tee "$PWD/build/native-ui-audit-build.log"
+          python -c "import json; d=json.load(open('build/native-ui-audit.json')); print('BMG files:', d['fileCount']); print('candidate translations:', len(d['translationCandidates'])); print('unmatched candidate keys:', len(d['unmatchedTranslationKeys'])); print('resource parse errors:', len(d['resourceErrors']))" 2>&1 | tee -a "$PWD/build/native-ui-audit-build.log"
 
       - name: Upload native audit results and logs, even after failure
         if: always()
@@ -310,12 +304,9 @@ jobs:
           WADPAKK_DIR: ${{ github.workspace }}/.tools/WadPakk
         run: |
           mkdir -p build
-          set -o pipefail
-          {
-            dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --download-diagnostics "$PWD/build/TV-Guide-USA-Native-UI-Preview.wad" "$PWD/build/TV-Guide-USA-Metadata-Only-Control.wad" "$PWD/translations/native-english-messages.json"
-            python tools/inspect_wad.py build/TV-Guide-USA-Native-UI-Preview.wad
-            python tools/inspect_wad.py build/TV-Guide-USA-Metadata-Only-Control.wad
-          } 2>&1 | tee "$PWD/build/native-preview-build.log"
+          dotnet run --project tools/native-patcher/NativeTitlePatcher.csproj --configuration Release -p:WADPAKK_DIR="$PWD/.tools/WadPakk" -- --download-diagnostics "$PWD/build/TV-Guide-USA-Native-UI-Preview.wad" "$PWD/build/TV-Guide-USA-Metadata-Only-Control.wad" "$PWD/translations/native-english-messages.json" 2>&1 | tee "$PWD/build/native-preview-build.log"
+          python tools/inspect_wad.py build/TV-Guide-USA-Native-UI-Preview.wad 2>&1 | tee -a "$PWD/build/native-preview-build.log"
+          python tools/inspect_wad.py build/TV-Guide-USA-Metadata-Only-Control.wad 2>&1 | tee -a "$PWD/build/native-preview-build.log"
 
       - name: Upload native UI preview and build logs for Dolphin debugging
         if: always()
