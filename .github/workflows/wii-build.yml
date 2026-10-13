@@ -346,6 +346,7 @@ jobs:
           python tools/build_tvmaze_guide.py --offline-demo --output-dir "$RUNNER_TEMP/guide-test" --c-output "$RUNNER_TEMP/guide-test/embedded_guide_data.inc"
           grep -q 'TVGUIDE|1|US-EN|America/New_York|DEMO' "$RUNNER_TEMP/guide-test/guide-eastern.txt"
           bash -n tools/package-wad.sh
+          bash -n tools/fetch_wadpakk.sh
           python tools/inspect_wad.py --help
           python tools/prepare_wad_tool.py --help
 
