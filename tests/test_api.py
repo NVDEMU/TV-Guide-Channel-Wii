@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from xml.etree import ElementTree as ET
 
 from fastapi.testclient import TestClient
@@ -96,11 +96,17 @@ def test_us_region_is_available() -> None:
 
 def test_xmltv_import_changes_wii_mode_to_feed(tmp_path, monkeypatch) -> None:
     xmltv = tmp_path / "us.xml"
+    # The endpoint returns the next six hours. Keep the fixture relative to
+    # wall-clock time so this test does not start failing when a hard-coded
+    # programme date moves into the past.
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    start = (now - timedelta(minutes=30)).strftime("%Y%m%d%H%M%S %z")
+    stop = (now + timedelta(hours=2)).strftime("%Y%m%d%H%M%S %z")
     xmltv.write_text(
-        """<?xml version="1.0" encoding="UTF-8"?>
+        f"""<?xml version="1.0" encoding="UTF-8"?>
 <tv>
   <channel id="ny.abc"><display-name lang="en">ABC New York</display-name></channel>
-  <programme start="20261009000000 +0000" stop="20261011000000 +0000" channel="ny.abc">
+  <programme start="{start}" stop="{stop}" channel="ny.abc">
     <title lang="en">Imported US Programme</title>
     <desc lang="en">Imported test record.</desc>
   </programme>
